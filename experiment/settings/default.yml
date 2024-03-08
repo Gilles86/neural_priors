@@ -1,0 +1,59 @@
+preferences:
+  general:
+    audioLib: sounddevice
+    units: deg
+
+window:
+  size: [1280, 1024]
+  pos: [0, 0]
+
+  color: [0, 0, 0]
+  fullscr: False
+  winType: pyglet
+  viewPos: [0, 10]
+  #waitBlanking: True
+  screen: 0
+  #refreshHz: 30
+  viewPos: [0, 0]
+  #viewScale: [.5, .5]
+
+monitor:
+  name: default
+  width: 42  # in cm
+  distance: 125  # in cm
+  gamma: 1
+
+mri:
+  simulate: False
+  TR: 2.0  # seconds between volume acquisitions
+  TA: 2.0  # seconds to acquire one volume
+  volumes: 10  # number of 3D volumes to obtain in a given scanning run
+  sync: t  # character used as flag for sync timing, default=‘5’
+  skip: 10  # how many frames to silently omit initially during T1 stabilization, no sync pulse.
+  sound: False  # simulate scanner noise
+  n_dummy_scans: 4
+
+cloud:
+  aperture_radius: 4
+  dot_radius: .1
+
+slider:
+  max_length: 20
+  max_range: [10, 50]
+  borderColor: [-1, -1, -1]
+  color: [.5, .5, .5]
+  height: .5
+  borderWidth: 5.
+  markerColor: [.25, .25, .25]
+
+example_session:
+  n_examples: 30
+  n_range: [10, 25]
+
+estimation_task:
+  n_trials_session: 10
+  n_range: [10, 25]
+
+
+mouse:
+  visible: False
