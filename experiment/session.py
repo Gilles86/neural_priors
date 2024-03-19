@@ -1,38 +1,31 @@
 from exptools2.core import PylinkEyetrackerSession, Trial
 from psychopy import event
 from stimuli import ResponseSlider, FixationLines
-
+import yaml
+import os.path as op
 
 class EstimationSession(PylinkEyetrackerSession):
-    def __init__(self, output_str, subject=None, output_dir=None, settings_file=None, run=None, eyetracker_on=False):
+    def __init__(self, output_str, range, subject=None, output_dir=None, settings_file=None, run=None, eyetracker_on=False):
+
         super().__init__(output_str, output_dir=output_dir, settings_file=settings_file, eyetracker_on=eyetracker_on)
-        self.settings['subject'] = subject
-        self.settings['run'] = run
-        self.settings['range'] = [10, 25]
+
+        self.win.color = (-.25, -.25, -.25)
 
         self.mouse = event.Mouse(visible=False)
-        self.mouse.setVisible(visible=False)
-        self.win.mouseVisible = False
+
+        self.instructions = yaml.safe_load(open(op.join(op.dirname(__file__), 'instruction_texts.yml'), 'r'))
+
+        self.settings['subject'] = subject
+        self.settings['run'] = run
+        self.settings['range'] = self.settings['ranges'].get(range)
+
 
         self.fixation_lines = FixationLines(self.win,
-                                            self.settings['cloud'].get(
-                                                'aperture_radius')*2,
-                                            color=(1, -1, -1))
+                                            self.settings['cloud'].get('aperture_radius'),
+                                            color=(1, -1, -1),
+                                            lineWidth=self.settings['fixation_lines'].get('line_width'))
 
         self._setup_response_slider()
-
-
-        try:
-            subject = int(subject)
-            narrow_first = subject % 2 == 0
-
-        except ValueError:
-            narrow_first = True
-
-        if narrow_first:
-            self.settings['range'] = [10, 25] if run < 5 else [10, 40]
-        else:
-            self.settings['range'] = [10, 40] if run < 5 else [10, 25]
 
     def _setup_response_slider(self):
 

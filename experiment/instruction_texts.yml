@@ -1,22 +1,19 @@
-welcome1:
-  Welcome to the experiment!
-  This experiment, your job is to indicate how many dots are in the cloud.
-  You will do this by moving the slider to the left or right.
-
 intro_block:
-  NOTE: in this part of the experiment, the number of dots in the cloud will always be
-   between {range_lower} and {range_higher}.
+  "NOTE: The number of dots will be between\n\n {range_low} and {range_high}"
 
 intro_part1: 
-  In this FIRST part of the block, we will show you 15 examples of possible
-  clouds of dots and also show you the actual number below. This allows
-  you to adapt to the estimation task.
+  "This is the FIRST part of the block. \n\n
+  You will see 15 examples of possible numerosities of dots."
 
 intro_part2:
-  In this SECOND part of the block  it is your task to estimate the number of dots of 30 clouds
-  and report using the slider.
-  We will give you feedback on how many dots were actually in the cloud after each estimation.
+  "This is the SECOND part of the block.\n\n
+  Report the number of dots using the slider.\n\n
+  You will receive feedback on the actual number of dots.\n\n
+  NOTE: Your accuracy will influence your monetary bonus!"
+  
 
 intro_part3:
-  In this THIRD part of the experiment, you will again have to esimate the number of dots in the cloud.
-  However, this time, we will not give you feedback on the actual number of dots in the cloud.
+  "This is the THIRD part of the block.\n\n
+  Again, indicate the number of dots with the slider.\n\n
+  You will get no feedback anymore.\n\n
+  NOTE: your accuracy influence your monetary bonus!"

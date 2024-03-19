@@ -1,25 +1,17 @@
-preferences:
-  general:
-    audioLib: sounddevice
-    units: deg
-
 window:
-  size: [1280, 1024]
+  size: [1500, 1500]
   pos: [0, 0]
 
   color: [0, 0, 0]
-  fullscr: False
+  fullscr: True
   winType: pyglet
   viewPos: [0, 10]
-  #waitBlanking: True
   screen: 0
-  #refreshHz: 30
   viewPos: [0, 0]
-  #viewScale: [.5, .5]
 
 monitor:
   name: default
-  width: 42  # in cm
+  width: 42
   distance: 125  # in cm
   gamma: 1
 
@@ -34,26 +26,51 @@ mri:
   n_dummy_scans: 4
 
 cloud:
-  aperture_radius: 4
+  aperture_radius: 2.5
   dot_radius: .1
 
 slider:
-  max_length: 20
+  max_length: 10
   max_range: [10, 50]
   borderColor: [-1, -1, -1]
   color: [.5, .5, .5]
+  feedbackColor: [1., 1., -1]
   height: .5
   borderWidth: 5.
   markerColor: [.25, .25, .25]
 
-example_session:
-  n_examples: 30
-  n_range: [10, 25]
+various:
+  text_width: 15
+  text_height: .5
+  text_color: [1, 1, 1]
 
-estimation_task:
-  n_trials_session: 10
-  n_range: [10, 25]
+examples:
+  n_examples: 15
 
+feedback:
+  n_examples: 30 # 30
+
+task:
+  n_trials: 1
+
+main:
+  n_runs: 4
+
+ranges:
+  narrow: [10, 25]
+  wide: [10, 40]
+
+durations:
+  first_fixation: 0.3
+  second_fixation: 0.3
+  array_duration: 0.6
+  isi: [4., 5., 6.]
+  response_screen: 3.0
+  feedback: 0.5
+
+fixation_lines:
+  line_width: 5
+  center_fixation_size: 0.05
 
 mouse:
   visible: False
