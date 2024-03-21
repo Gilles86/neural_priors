@@ -10,10 +10,9 @@ intro_part2:
   Report the number of dots using the slider.\n\n
   You will receive feedback on the actual number of dots.\n\n
   NOTE: Your accuracy will influence your monetary bonus!"
-  
 
 intro_part3:
   "This is the THIRD part of the block.\n\n
-  Again, indicate the number of dots with the slider.\n\n
-  You will get no feedback anymore.\n\n
-  NOTE: your accuracy influence your monetary bonus!"
+  You will receive NO feedback anymore.\n\n
+  NOTE: your accuracy influence your monetary bonus!\n\n
+  This is run {run}/8."

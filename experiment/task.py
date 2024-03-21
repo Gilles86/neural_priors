@@ -14,25 +14,53 @@ from session import EstimationSession
 class TaskTrial(Trial):
     def __init__(self, session, trial_nr, phase_durations=None,
                 jitter=1,
+                stimulus_series=False,
                 n=15, **kwargs):
 
         if phase_durations is None:
-            phase_durations = [session.settings['durations']['first_fixation'],
-                               session.settings['durations']['second_fixation'],
-                               session.settings['durations']['array_duration'],
-                               jitter,
-                               session.settings['durations']['response_screen'],
-                               session.settings['durations']['feedback'],
-                               0.0]
+            if stimulus_series:
+                phase_durations = [session.settings['durations']['first_fixation'],
+                                session.settings['durations']['second_fixation'],
+                                session.settings['durations']['array_duration'] / 4.,
+                                session.settings['durations']['array_duration'] / 4.,
+                                session.settings['durations']['array_duration'] / 4.,
+                                session.settings['durations']['array_duration'] / 4.,
+                                jitter,
+                                session.settings['durations']['response_screen'],
+                                session.settings['durations']['feedback'],
+                                0.0]
+            else:
+                phase_durations = [session.settings['durations']['first_fixation'],
+                                session.settings['durations']['second_fixation'],
+                                session.settings['durations']['array_duration'],
+                                jitter,
+                                session.settings['durations']['response_screen'],
+                                session.settings['durations']['feedback'],
+                                0.0]
 
         self.total_duration = np.sum(phase_durations)
 
+        self.stimulus_series = stimulus_series
+
+        self.stimulus_phase = [2]
+        self.response_phase = 4
+        self.feedback_phase = 5
+
+        if self.stimulus_series:
+            self.stimulus_phase += [3, 4, 5]
+            self.response_phase = 7
+            self.feedback_phase = 8
+
         phase_names = ['fixation1', 'fixation2', 'stimulus', 'jitter', 'response', 'feedback', 'iti']
+
+        if self.stimulus_series:
+            phase_names = ['fixation1', 'fixation2', 'stimulus1', 'stimulus2', 'stimulus3', 'stimulus4', 'jitter', 'response', 'feedback', 'iti']
+
         super().__init__(session, trial_nr, phase_durations, phase_names=phase_names, **kwargs)
 
         self.parameters['n'] = n
         self.parameters['jitter'] = jitter
-        self.stimulus_array = _create_stimulus_array(self.session.win, n, self.session.settings['cloud'].get('aperture_radius'), self.session.settings['cloud'].get( 'dot_radius'),)
+        self.stimulus_array = _create_stimulus_array(self.session.win, n, self.session.settings['cloud'].get('aperture_radius'), self.session.settings['cloud'].get('dot_radius'),)
 
         self.too_late_stimulus = TextStim(self.session.win, text='Too late!', pos=(0, 0), color=(1, -1, -1), height=0.5)
         self.parameters['start_marker_position'] = np.random.randint(self.session.settings['range'][0], self.session.settings['range'][1] + 1)
@@ -41,7 +69,7 @@ class TaskTrial(Trial):
 
         response_slider = self.session.response_slider
 
-        if self.phase == 3:
+        if self.phase == (self.response_phase - 1):
 
             if (not self.session.mouse.getPressed()[0]) and (self.session.mouse.getPos()[0] != response_slider.marker.pos[0]):
                 try:
@@ -50,12 +78,12 @@ class TaskTrial(Trial):
                 except Exception as e:
                     print(e)
 
-            self.last_mouse_pos = self.session.mouse.getPos()[0]
+            self.last_mouse_pos = self.session.mouse.getPos()[0]/self.session.settings['interface']['mouse_multiplier']
 
-        elif self.phase == 4:
+        elif self.phase == self.response_phase:
 
             if not hasattr(self, 'response_onset'):
-                current_mouse_pos = self.session.mouse.getPos()[0]
+                current_mouse_pos = self.session.mouse.getPos()[0]/self.session.settings['interface']['mouse_multiplier']
                 if np.abs(self.last_mouse_pos - current_mouse_pos) > response_slider.delta_rating_deg:
                     marker_position = response_slider.mouseToMarkerPosition(current_mouse_pos)
                     response_slider.setMarkerPosition(marker_position)
@@ -74,10 +102,14 @@ class TaskTrial(Trial):
         super().get_events()
 
     def draw(self):
+
         if self.session.win.mouseVisible:
             self.session.win.mouseVisible = False
 
-        self.session.fixation_lines.draw()
+        if (self.phase == self.feedback_phase) & (not hasattr(self, 'response_onset')):
+            self.session.fixation_lines.draw(draw_fixation_cross=False)
+        else:
+            self.session.fixation_lines.draw()
 
         response_slider = self.session.response_slider
 
@@ -85,22 +117,35 @@ class TaskTrial(Trial):
             self.session.fixation_lines.setColor((-1, 1, -1))
         elif self.phase == 1:
             self.session.fixation_lines.setColor((1, -1, -1))
-        elif self.phase == 2:
+        elif self.phase in self.stimulus_phase:
+
+            if self.stimulus_series:
+                if self.previous_phase != self.phase:
+                    if self.phase == 3:
+                        self.stimulus_array.xys[:, 0] *= -1
+                    if self.phase == 4:
+                        self.stimulus_array.xys[:, 1] *= -1
+                    if self.phase == 5:
+                        self.stimulus_array.xys[:, 0] *= -1
+
             self.stimulus_array.draw()
-        elif self.phase == 3:
+
+        elif self.phase == (self.response_phase - 1):
             response_slider.setMarkerPosition(self.parameters['start_marker_position'])
             response_slider.show_marker = False
-        elif self.phase == 4:
+
+        elif self.phase == self.response_phase:
             response_slider.marker.inner_color = self.session.settings['slider'].get('color')
             response_slider.draw()
 
-        elif self.phase == 5:
+        elif self.phase == self.feedback_phase:
             if hasattr(self, 'response_onset'):
                 response_slider.marker.inner_color = self.session.settings['slider'].get('feedbackColor')
                 response_slider.draw()
             else:
                 self.too_late_stimulus.draw()
                     
+        self.previous_phase = self.phase
 class TaskSession(EstimationSession):
 
 
@@ -108,7 +153,7 @@ class TaskSession(EstimationSession):
         """Create trials."""
 
 
-        instruction_trial1 = InstructionTrial(self, 0, self.instructions['intro_part3'])
+        instruction_trial1 = InstructionTrial(self, 0, self.instructions['intro_part3'].format(run=self.settings['run']))
         instruction_trial2 = InstructionTrial(self, 0, self.instructions['intro_block'].format(range_low=self.settings['range'][0],
                                                                                                range_high=self.settings['range'][1]))
 
@@ -128,7 +173,7 @@ class TaskSession(EstimationSession):
         isis = isis[:n_trials]
         np.random.shuffle(isis)
 
-        self.trials += [TaskTrial(self, i+1, jitter=jitter, n=n) for i, (n, jitter) in enumerate(zip(ns, isis))]
+        self.trials += [TaskTrial(self, i+1, jitter=jitter, n=n, stimulus_series=self.settings['cloud']['stimulus_series']) for i, (n, jitter) in enumerate(zip(ns, isis))]
 
         self.trials.append(OutroTrial(session=self))
 

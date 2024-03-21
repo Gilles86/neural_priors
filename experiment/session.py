@@ -23,7 +23,8 @@ class EstimationSession(PylinkEyetrackerSession):
         self.fixation_lines = FixationLines(self.win,
                                             self.settings['cloud'].get('aperture_radius'),
                                             color=(1, -1, -1),
-                                            lineWidth=self.settings['fixation_lines'].get('line_width'))
+                                            lineWidth=self.settings['fixation_lines'].get('line_width'),
+                                            center_fixation_size=self.settings['fixation_lines'].get('center_fixation_size'))
 
         self._setup_response_slider()
 
@@ -43,7 +44,8 @@ class EstimationSession(PylinkEyetrackerSession):
                                          self.settings['range'],
                                          marker_position=None,
                                          markerColor=self.settings['slider'].get('markerColor'),
-                                         borderWidth=self.settings['slider'].get('borderWidth'))
+                                         borderWidth=self.settings['slider'].get('borderWidth'),
+                                         text_height=self.settings['slider'].get('text_height'))
 
     def run(self):
         """ Runs experiment. """

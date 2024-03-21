@@ -30,7 +30,8 @@ class FeedbackTrial(Trial):
 
         text_pos = (0, self.session.response_slider.height * 1.5)
 
-        self.n_text_stimulus = TextStim(self.session.win, text=n, pos=text_pos, color=(-1, 1, -1))
+        self.n_text_stimulus = TextStim(self.session.win, text=n, pos=text_pos, color=(-1, 1, -1),
+                                        height=self.session.settings['slider'].get('text_height'))
 
         self.start_marker_position = np.random.randint(self.session.settings['range'][0], self.session.settings['range'][1] + 1)
 
@@ -79,12 +80,11 @@ class FeedbackTrial(Trial):
                     self.last_mouse_pos = response_slider.marker.pos[0]
                 except Exception as e:
                     print(e)
-            # self.last_mouse_pos = self.session.mouse.getPos()[0]
 
         elif self.phase == 3:
             current_mouse_pos = self.session.mouse.getPos()[0]
 
-            if np.abs(self.last_mouse_pos - current_mouse_pos) > response_slider.delta_rating_deg/2.:
+            if np.abs(self.last_mouse_pos - current_mouse_pos) > response_slider.delta_rating_deg:
                 self.session.response_slider.show_marker = True
                 # direction = 1 if current_mouse_pos > self.last_mouse_pos else -1
                 # response_slider.setMarkerPosition(response_slider.marker_position + direction)

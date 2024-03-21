@@ -157,6 +157,7 @@ class ResponseSlider(object):
     def __init__(self, win, position, length, height, color, borderColor, range, marker_position, show_marker=False,
                  show_number=True,
                  markerColor=None,
+                 text_height=0.5,
                  *args, **kwargs):
 
         self.range = range
@@ -165,7 +166,7 @@ class ResponseSlider(object):
         self.show_number = show_number
 
         if self.show_number:
-            self.number = TextStim(win, text='0', pos=(position[0], position[1] - height*1.5), color=(1, 1, 1), units='deg')
+            self.number = TextStim(win, text='0', pos=(position[0], position[1] - height*1.5), color=(1, 1, 1), units='deg', height=text_height)
 
         if marker_position is None:
             marker_position = np.random.randint(range[0], range[1]+1) 
