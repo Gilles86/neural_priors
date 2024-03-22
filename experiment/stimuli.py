@@ -28,7 +28,7 @@ class FixationLines(object):
         self.line6 = Line(win, start=(-center_fixation_size, center_fixation_size),
                             end=(center_fixation_size, -center_fixation_size), lineColor=color, *args, **kwargs)
 
-        self.aperture = Circle(win, radius=circle_radius * 1.05, fillColor=(0, 0, 0))
+        self.aperture = Circle(win, radius=circle_radius * 1.05, fillColor=(0, 0, 0), lineColor=color, lineWidth=kwargs['lineWidth'])
 
         self.lines = [self.line1, self.line2, self.line3, self.line4, self.line5, self.line6]
 
@@ -44,9 +44,17 @@ class FixationLines(object):
                 line.draw()
 
 
-    def setColor(self, color):
-        for line in self.lines:
-            line.color = color
+    def setColor(self, color, fixation_cross_only=False):
+
+        if fixation_cross_only:
+            for line in self.lines[-2:]:
+                line.color = color
+        else:
+            for line in self.lines:
+                line.color = color
+
+            self.aperture.lineColor = color
+
 
 class RoundedRectangle(object):
 

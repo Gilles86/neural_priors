@@ -114,9 +114,9 @@ class TaskTrial(Trial):
         response_slider = self.session.response_slider
 
         if self.phase == 0:
-            self.session.fixation_lines.setColor((-1, 1, -1))
+            self.session.fixation_lines.setColor((-1, .5, -1), fixation_cross_only=True)
         elif self.phase == 1:
-            self.session.fixation_lines.setColor((1, -1, -1))
+            self.session.fixation_lines.setColor((1, -1, -1), fixation_cross_only=True)
         elif self.phase in self.stimulus_phase:
 
             if self.stimulus_series:

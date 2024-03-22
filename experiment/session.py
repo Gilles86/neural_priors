@@ -9,7 +9,7 @@ class EstimationSession(PylinkEyetrackerSession):
 
         super().__init__(output_str, output_dir=output_dir, settings_file=settings_file, eyetracker_on=eyetracker_on)
 
-        self.win.color = (-.25, -.25, -.25)
+        # self.win.color = (-.25, -.25, -.25)
 
         self.mouse = event.Mouse(visible=False)
 
