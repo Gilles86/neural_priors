@@ -1,12 +1,13 @@
 from session import EstimationSession
 from exptools2.core import Trial
 import numpy as np
-from utils import _create_stimulus_array, get_output_dir_str, OutroTrial
+from utils import _create_stimulus_array, get_output_dir_str, OutroTrial, get_settings
 from psychopy.visual import TextStim
 import os.path as op
 import argparse
 from instruction import InstructionTrial
 import yaml
+from score import ScoreTrial
 
 class FeedbackTrial(Trial):
 
@@ -121,6 +122,8 @@ class FeedbackSession(EstimationSession):
         self.trials += [FeedbackTrial(self, i+1, n=n) for i, n in enumerate(ns)]
 
         self.trials.append(OutroTrial(session=self))
+
+        self.trials.append(ScoreTrial(self, 0))
 
 
 if __name__ == '__main__':

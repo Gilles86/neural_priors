@@ -85,6 +85,40 @@ class ScoreSession(EstimationSession):
 
         self.trials = [InstructionTrial(self, 0, txt1), InstructionTrial(self, 0, txt2), InstructionTrial(self, 0, txt3)]
 
+class ScoreTrial(InstructionTrial):
+    """ Simple trial with only fixation cross.  """
+
+    def __init__(self, session, trial_nr=0, phase_durations=None, **kwargs):
+
+        txt = '''Please lie still for a few moments.'''
+
+        if phase_durations is None:
+            phase_durations = [0.5, 5*60]
+
+        self.log = session.global_log
+
+        super().__init__(session=session, trial_nr=trial_nr, phase_durations=phase_durations, txt='',
+                         bottom_txt='', 
+                         phase_names=['get_score', 'score'],
+                         **kwargs)
+
+    def draw(self):
+
+        if self.phase == 0:
+            self.get_score()
+            self.stop_phase()
+
+        super().draw()
+
+    def get_score(self):
+        self.log = self.session.global_log.copy()
+        print(self.log)
+        self.log = self.log.set_index(['trial_nr', 'event_type']).xs('feedback', level='event_type').astype({'n':float, 'response':float})
+
+        self.error = self.log['n'] - self.log['response']
+        self.mean_error = self.error.mean()
+        self.mean_abs_error = self.error.abs().mean()
+        self.text.text = f'Your average absolute error in this run was:\n{self.mean_abs_error}\n'
         
 
 def main(subject, session, settings):

@@ -10,6 +10,7 @@ import numpy as np
 import logging
 from psychopy.visual import Line, Rect, TextStim
 from session import EstimationSession
+from score import ScoreTrial
 
 class TaskTrial(Trial):
     def __init__(self, session, trial_nr, phase_durations=None,
@@ -176,6 +177,10 @@ class TaskSession(EstimationSession):
         self.trials += [TaskTrial(self, i+1, jitter=jitter, n=n, stimulus_series=self.settings['cloud']['stimulus_series']) for i, (n, jitter) in enumerate(zip(ns, isis))]
 
         self.trials.append(OutroTrial(session=self))
+
+        self.trials.append(ScoreTrial(self, 0))
+
+
 
 def main(subject, session, run, range, settings='default'):
 
