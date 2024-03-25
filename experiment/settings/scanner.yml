@@ -1,0 +1,94 @@
+window:
+  size: [1280, 1024]
+  pos: [0, 0]
+  color: [0, 0, 0]
+  fullscr: True
+  winType: pyglet
+  screen: 0
+
+monitor:
+  name: default
+  width: 42
+  distance: 125  # in cm
+  gamma: 1
+
+mri:
+  simulate: False
+  TR: 2.0  # seconds between volume acquisitions
+  TA: 2.0  # seconds to acquire one volume
+  volumes: 10  # number of 3D volumes to obtain in a given scanning run
+  sync: t  # character used as flag for sync timing, default=‘5’
+  skip: 10  # how many frames to silently omit initially during T1 stabilization, no sync pulse.
+  sound: False  # simulate scanner noise
+  n_dummy_scans: 4
+
+cloud:
+  aperture_radius: 2.5
+  dot_radius: .1
+  stimulus_series: False
+
+slider:
+  max_length: 10
+  max_range: [10, 50]
+  borderColor: [-1, -1, -1]
+  color: [.5, .5, .5]
+  feedbackColor: [1., 1., -1]
+  height: .5
+  borderWidth: 5.
+  markerColor: [.25, .25, .25]
+  text_height: .5
+
+various:
+  text_width: 15
+  text_height: .5
+  text_color: [1, 1, 1]
+
+examples:
+  n_examples: 15
+
+feedback:
+  n_examples: 30 # 30
+
+task:
+  n_trials: 30
+
+main:
+  n_runs: 4
+
+ranges:
+  narrow: [10, 25]
+  wide: [10, 40]
+
+durations:
+  first_fixation: 0.3
+  second_fixation: 0.3
+  array_duration: 0.6
+  isi: [4., 5., 6.]
+  response_screen: 3.0
+  feedback: 0.5
+
+fixation_lines:
+  lineWidth: 4
+  center_fixation_size: 0.1
+  draw_circle: False
+  draw_outer_cross: False
+
+mouse:
+  visible: False
+
+interface:
+  mouse_multiplier: 2.
+
+score:
+  no_response_penalty: 0.1
+  max_reward: 0.1
+  reward_slope: 0.00344827586
+
+eyetracker:
+  model: eyelink
+  CNUM: 5
+  MIN_CALIB_FIX: 1000
+  options:
+    active_eye: RIGHT
+    sample_rate: 500
+    calibration_type: HV5
