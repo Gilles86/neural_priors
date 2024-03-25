@@ -3,6 +3,7 @@ from psychopy.visual import ElementArrayStim, RadialStim, Circle
 import os.path as op
 import logging
 from exptools2.core import Trial
+import yaml
 from instruction import InstructionTrial
 
 def _sample_dot_positions(n=10, circle_radius=20, dot_radius=1, min_ecc=0.2, max_n_tries=10000):
@@ -116,3 +117,15 @@ class OutroTrial(InstructionTrial):
             for key, t in events:
                 if key == 'space':
                     self.stop_phase()
+
+
+def get_settings(settings):
+    settings_fn = op.join(op.dirname(__file__), 'settings', f'{settings}.yml')
+    print(settings_fn)
+
+    with open(settings_fn, 'r') as f:
+        settings = yaml.safe_load(f)
+
+    use_eyetracker = 'eyetracker' in settings.keys()
+
+    return settings_fn, use_eyetracker

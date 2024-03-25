@@ -7,8 +7,6 @@ import os.path as op
 class EstimationSession(PylinkEyetrackerSession):
     def __init__(self, output_str, range, subject=None, output_dir=None, settings_file=None, run=None, eyetracker_on=False):
 
-        print(eyetracker_on)
-
         super().__init__(output_str, output_dir=output_dir, settings_file=settings_file, eyetracker_on=eyetracker_on)
 
         # self.win.color = (-.25, -.25, -.25)

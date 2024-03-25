@@ -3,7 +3,7 @@ import os.path as op
 from psychopy.visual import Slider
 from psychopy import event
 from exptools2.core import PylinkEyetrackerSession, Trial
-from utils import _create_stimulus_array, get_output_dir_str, DummyWaiterTrial, OutroTrial
+from utils import _create_stimulus_array, get_output_dir_str, DummyWaiterTrial, OutroTrial, get_settings
 from instruction import InstructionTrial
 from stimuli import FixationLines, ResponseSlider
 import numpy as np
@@ -179,12 +179,13 @@ class TaskSession(EstimationSession):
 
 def main(subject, session, run, range, settings='default'):
 
-    settings_fn = op.join(op.dirname(__file__), 'settings', f'{settings}.yml')
+
     output_dir, output_str = get_output_dir_str(subject, session, 'estimation_task', run)
+    settings_fn, use_eyetracker = get_settings(settings)
 
     session = TaskSession(output_str=output_str, subject=subject,
                           output_dir=output_dir, settings_file=settings_fn, 
-                          run=run, range=range, eyetracker_on=False)
+                          run=run, range=range, eyetracker_on=use_eyetracker)
 
     session.create_trials()
     session.run()

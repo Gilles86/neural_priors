@@ -5,7 +5,7 @@ import pandas as pd
 import re
 from session import EstimationSession
 from instruction import InstructionTrial
-from utils import get_output_dir_str
+from utils import get_output_dir_str, get_settings
 from exptools2.core import PylinkEyetrackerSession, Trial
 
 
@@ -90,11 +90,12 @@ class ScoreSession(EstimationSession):
 def main(subject, session, settings):
 
     output_dir, output_str = get_output_dir_str(subject, session, 'score', 0)
-    settings_fn = op.join(op.dirname(__file__), 'settings', f'{settings}.yml')
+
+    settings_fn, use_eyetracker = get_settings(settings)
 
     session_ = ScoreSession(output_str=output_str,
                             range='narrow',
-                           subject=subject, output_dir=output_dir, eyetracker_on=False,
+                           subject=subject, output_dir=output_dir, eyetracker_on=use_eyetracker,
                            settings_file=settings_fn)
 
     session_.create_trials(session)

@@ -135,13 +135,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
     output_dir, output_str = get_output_dir_str(args.subject, args.session, 'feedback', args.run)
 
-    settings = args.settings
-    settings_fn = op.join(op.dirname(__file__), 'settings', f'{settings}.yml')
+    settings_fn, use_eyetracker = get_settings(args.settings)
 
     session = FeedbackSession(output_str=output_str,
                               subject=args.subject,
                               range=args.range,
-                              eyetracker_on=False, output_dir=output_dir, settings_file=settings_fn, run=args.run)
+                              eyetracker_on=use_eyetracker, output_dir=output_dir, settings_file=settings_fn, run=args.run)
 
     session.create_trials()
     session.run()

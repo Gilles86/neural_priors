@@ -2,7 +2,7 @@ import argparse
 from examples import ExampleSession
 from feedback import FeedbackSession
 from task import TaskSession
-from utils import get_output_dir_str
+from utils import get_output_dir_str, get_settings
 import os.path as op
 from score import ScoreSession
 
@@ -15,7 +15,9 @@ def main(subject, session, start_run, stimulus_range, settings, n_runs=None,
         n_runs = 4
 
     output_dir, output_str = get_output_dir_str(subject, session, 'examples', run=run)
-    settings_fn = op.join(op.dirname(__file__), 'settings', f'{settings}.yml')
+
+    settings_fn, use_eyetracker = get_settings(settings)
+
 
     sessions = []
 
@@ -26,7 +28,7 @@ def main(subject, session, start_run, stimulus_range, settings, n_runs=None,
                                         settings_file=settings_fn,
                                         run=run,
                                         range=stimulus_range,
-                                        eyetracker_on=False) 
+                                        eyetracker_on=use_eyetracker) 
         example_session.create_trials()
         example_session.run()
 
@@ -39,7 +41,7 @@ def main(subject, session, start_run, stimulus_range, settings, n_runs=None,
                                         settings_file=settings_fn,
                                         run=run,
                                         range=stimulus_range,
-                                        eyetracker_on=False)
+                                        eyetracker_on=use_eyetracker)
 
         feedback_session.create_trials()
         feedback_session.run()
@@ -48,15 +50,16 @@ def main(subject, session, start_run, stimulus_range, settings, n_runs=None,
         output_dir, output_str = get_output_dir_str(subject, session, 'estimation_task', run=run)
         task_session = TaskSession(output_str=output_str, subject=subject,
                         output_dir=output_dir, settings_file=settings_fn, 
-                        run=run, range=stimulus_range, eyetracker_on=False)
+                        run=run, range=stimulus_range, eyetracker_on=use_eyetracker)
 
         task_session.create_trials()
         task_session.run()
 
     output_dir, output_str = get_output_dir_str(subject, session, 'score', run=0)
+
     score_session = ScoreSession(output_str=output_str,
                             range='narrow',
-                            subject=subject, output_dir=output_dir, eyetracker_on=False,
+                            subject=subject, output_dir=output_dir, eyetracker_on=use_eyetracker,
                             settings_file=settings_fn)
 
     score_session.create_trials(session)

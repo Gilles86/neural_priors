@@ -1,12 +1,11 @@
 from session import EstimationSession
 from exptools2.core import Trial
 import numpy as np
-from utils import _create_stimulus_array, get_output_dir_str
+from utils import _create_stimulus_array, get_output_dir_str, get_settings
 from psychopy.visual import TextStim
 import os.path as op
 import argparse
 from instruction import InstructionTrial
-import yaml
 
 class ExampleTrial(Trial):
 
@@ -23,7 +22,7 @@ class ExampleTrial(Trial):
 
         self.stimulus_array = _create_stimulus_array(self.session.win, n, aperture_radius, dot_radius)
 
-        text_pos = (0, -aperture_radius * 1.25)
+        text_pos = (0, -aperture_radius * 1.3)
         self.n_text_stimulus = TextStim(self.session.win, text=n, pos=text_pos, color=(-1, 1, -1))
 
     def draw(self):
@@ -67,11 +66,11 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    settings_fn = op.join(op.dirname(__file__), 'settings', f'{args.settings}.yml')
+    settings_fn, use_eyetracker = get_settings(args.settings)
     output_dir, output_str = get_output_dir_str(args.subject, args.session, 'examples', args.run)
 
     session = ExampleSession(output_str=output_str, output_dir=output_dir, subject=args.subject,
-                             eyetracker_on=False,
+                             eyetracker_on=use_eyetracker,
                              range=args.range,
                              settings_file=settings_fn,
                              run=args.run)
