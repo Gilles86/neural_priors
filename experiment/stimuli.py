@@ -4,57 +4,63 @@ import numpy as np
 
 class FixationLines(object):
 
-    def __init__(self, win, circle_radius, color, center_fixation_size=0.25, *args, **kwargs):
+    def __init__(self, win, circle_radius, color, center_fixation_size=0.25, plus_sign=False, draw_circle=True, draw_outer_cross=True, *args, **kwargs):
 
         win_size = win.size
         max_dimension = np.max(win_size)
 
-        coord = circle_radius * 1.05 * np.cos(np.pi / 4)
-        self.line1 = Line(win, start=(-coord, -coord),
-                          end=(-max_dimension, -max_dimension), lineColor=color, *args, **kwargs)
+        coord = circle_radius * 1.1 * np.cos(np.pi / 4)
 
-        self.line2 = Line(win, start=(coord, coord),
-                          end=(max_dimension, max_dimension), lineColor=color, *args, **kwargs)
-
-        self.line3 = Line(win, start=(-coord, coord),
-                          end=(-max_dimension, max_dimension), lineColor=color, *args, **kwargs)
-
-        self.line4 = Line(win, start=(coord, -coord),
-                            end=(max_dimension, -max_dimension), lineColor=color, *args, **kwargs)
-
-        self.line5 = Line(win, start=(-center_fixation_size, -center_fixation_size),
+        # Fixation cross center
+        self.line1 = Line(win, start=(-center_fixation_size, -center_fixation_size),
                           end=(center_fixation_size, center_fixation_size), lineColor=color, *args, **kwargs)
         
-        self.line6 = Line(win, start=(-center_fixation_size, center_fixation_size),
+        self.line2 = Line(win, start=(-center_fixation_size, center_fixation_size),
                             end=(center_fixation_size, -center_fixation_size), lineColor=color, *args, **kwargs)
 
-        self.aperture = Circle(win, radius=circle_radius * 1.05, fillColor=(0, 0, 0), lineColor=color, lineWidth=kwargs['lineWidth'])
+        self.fixation_cross = [self.line1, self.line2]
 
-        self.lines = [self.line1, self.line2, self.line3, self.line4, self.line5, self.line6]
+        self.elements = []
+
+        if draw_outer_cross:
+            self.line3 = Line(win, start=(-coord, -coord),
+                            end=(-max_dimension, -max_dimension), lineColor=color, *args, **kwargs)
+
+            self.line4 = Line(win, start=(coord, coord),
+                            end=(max_dimension, max_dimension), lineColor=color, *args, **kwargs)
+
+            self.line5 = Line(win, start=(-coord, coord),
+                            end=(-max_dimension, max_dimension), lineColor=color, *args, **kwargs)
+
+            self.line6 = Line(win, start=(coord, -coord),
+                                end=(max_dimension, -max_dimension), lineColor=color, *args, **kwargs)
+
+
+            self.elements += [self.line3, self.line4, self.line5, self.line6]
+
+        if draw_circle:
+            self.aperture = Circle(win, radius=circle_radius * 1.1, fillColor=(0, 0, 0), lineColor=color, lineWidth=kwargs['lineWidth'])
+            self.elements.append(self.aperture)
+
 
     def draw(self, draw_fixation_cross=True):
 
-        self.aperture.draw()
         
         if draw_fixation_cross:
-            for line in self.lines:
-                line.draw()
-        else:
-            for line in self.lines[:-2]:
+            for line in self.fixation_cross:
                 line.draw()
 
+        for line in self.elements:
+            line.draw()
 
     def setColor(self, color, fixation_cross_only=False):
 
-        if fixation_cross_only:
-            for line in self.lines[-2:]:
-                line.color = color
-        else:
-            for line in self.lines:
-                line.color = color
+        for line in self.fixation_cross:
+            line.lineColor = color
 
-            self.aperture.lineColor = color
-
+        if not fixation_cross_only:
+            for line in self.elements:
+                line.lineColor = color
 
 class RoundedRectangle(object):
 
