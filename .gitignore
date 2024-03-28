@@ -1,3 +1,5 @@
 experiment/logs/*
 *.pyc
 __pycache__/
+
+neural_priors.egg-info
