@@ -76,8 +76,10 @@ def main(subject, session, bids_folder='/data'):
         json_template = json.load(f)
         print(json_template)
   
-    for target_run in range(1, 8):
+    for target_run in range(1, 9):
         bold =  op.join(func_dir, f'sub-{subject}_ses-{session}_task-task_run-{target_run}_bold.nii')
+
+        print(f'Finding fmap for {bold}')
 
         if not op.exists(bold):
             print(f"Skipping EPI search for run {target_run}")
@@ -93,6 +95,8 @@ def main(subject, session, bids_folder='/data'):
         direction = 'RL' if (source_run % 2 == 1) else 'LR'
 
         epi = op.join(func_dir, f'sub-{subject}_ses-{session}_task-task_run-{source_run}_bold.nii')
+
+        print(f'Using {epi}')
         
         if not op.exists(epi):
             print(f"PROBLEM with target run {target_run}")
