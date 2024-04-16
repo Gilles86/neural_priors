@@ -20,6 +20,7 @@ def main(subject, session, bids_folder, confounds=False, smoothed=False):
 
     ims = sub.get_preprocessed_bold(session=session)
 
+    print(ims)
 
     base_dir = 'glm_stim1.denoise'
 
@@ -41,7 +42,7 @@ def main(subject, session, bids_folder, confounds=False, smoothed=False):
     onsets['duration'] = 0.0
 
     tr = 2.3
-    n = 131
+    n = 137
     frametimes = np.linspace(tr/2., (n - .5)*tr, n)
     onsets['onset'] = ((onsets['onset']+tr/2.) // 2.3) * 2.3
 
