@@ -11,7 +11,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
-def main(subject, session, bids_folder, smoothed=False):
+def main(subject, session, bids_folder, confounds=False, smoothed=False):
 
     derivatives = op.join(bids_folder, 'derivatives')
 
@@ -20,8 +20,6 @@ def main(subject, session, bids_folder, smoothed=False):
 
     ims = sub.get_preprocessed_bold(session=session)
 
-    confounds = sub.get_confounds(session=session)
-    confounds = [d.values for run, d in sub.get_confounds().groupby('run')]
 
     base_dir = 'glm_stim1.denoise'
 
@@ -71,7 +69,10 @@ def main(subject, session, bids_folder, smoothed=False):
     # and also save them to the disk
     opt['wantfileoutputs'] = [0, 0, 0, 1]
 
-    opt['extra_regressors'] = confounds
+    # see https://github.com/cvnlab/GLMsingle/pull/130
+    # confounds = sub.get_confounds(session=session)
+    # confounds = [d.values for run, d in sub.get_confounds().groupby('run')]
+    # opt['extra_regressors'] = confounds
 
     # running python GLMsingle involves creating a GLM_single object
     # and then running the procedure using the .fit() routine
