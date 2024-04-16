@@ -66,7 +66,7 @@ class Subject(object):
         return df
 
     def get_runs(self, session):
-        return list(range(2, 9))
+        return list(range(1, 9))
 
 
     def get_preprocessed_bold(self, session=1, space='T1w'):
