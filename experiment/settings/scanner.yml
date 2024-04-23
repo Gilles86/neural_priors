@@ -8,8 +8,8 @@ window:
 
 monitor:
   name: default
-  width: 42
-  distance: 125  # in cm
+  width: 58
+  distance: 110  # in cm
   gamma: 1
 
 mri:
