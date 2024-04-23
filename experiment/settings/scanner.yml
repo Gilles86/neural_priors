@@ -81,8 +81,8 @@ interface:
 
 score:
   no_response_penalty: 0.1
-  max_reward: 0.1
-  reward_slope: 0.00344827586
+  max_reward: 0.07
+  reward_slope: 0.00166666666
 
 eyetracker:
   model: eyelink
