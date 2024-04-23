@@ -77,7 +77,7 @@ mouse:
   visible: False
 
 interface:
-  mouse_multiplier: 2.
+  mouse_multiplier: 3.
 
 score:
   no_response_penalty: 0.1
