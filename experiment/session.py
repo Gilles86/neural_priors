@@ -5,11 +5,13 @@ import yaml
 import os.path as op
 
 class EstimationSession(PylinkEyetrackerSession):
-    def __init__(self, output_str, range, subject=None, output_dir=None, settings_file=None, run=None, eyetracker_on=False):
+    def __init__(self, output_str, range, subject=None, output_dir=None, settings_file=None, run=None, eyetracker_on=False, calibrate_eyetracker=False):
 
         super().__init__(output_str, output_dir=output_dir, settings_file=settings_file, eyetracker_on=eyetracker_on)
 
         # self.win.color = (-.25, -.25, -.25)
+
+        self.show_eyetracker_calibration = calibrate_eyetracker
 
         self.mouse = event.Mouse(visible=False)
 
@@ -48,7 +50,7 @@ class EstimationSession(PylinkEyetrackerSession):
 
     def run(self):
         """ Runs experiment. """
-        if self.eyetracker_on:
+        if self.eyetracker_on and self.show_eyetracker_calibration:
             self.calibrate_eyetracker()
 
         self.start_experiment()

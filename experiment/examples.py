@@ -63,6 +63,7 @@ if __name__ == '__main__':
     parser.add_argument('run', type=int, help='Run')
     parser.add_argument('range', choices=['narrow', 'wide'], help='Range (either narrow or wide)')
     parser.add_argument('--settings', type=str, help='Settings label', default='default')
+    parser.add_argument('--calibrate_eyetracker', action='store_true', dest='calibrate_eyetracker')
 
     args = parser.parse_args()
 
@@ -73,6 +74,7 @@ if __name__ == '__main__':
                              eyetracker_on=use_eyetracker,
                              range=args.range,
                              settings_file=settings_fn,
-                             run=args.run)
+                             run=args.run,
+                             calibrate_eyetracker=args.calibrate_eyetracker)
     session.create_trials()
     session.run()

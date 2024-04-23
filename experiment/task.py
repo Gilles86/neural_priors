@@ -182,7 +182,7 @@ class TaskSession(EstimationSession):
 
 
 
-def main(subject, session, run, range, settings='default'):
+def main(subject, session, run, range, settings='default', calibrate_eyetracker=False):
 
 
     output_dir, output_str = get_output_dir_str(subject, session, 'estimation_task', run)
@@ -190,7 +190,8 @@ def main(subject, session, run, range, settings='default'):
 
     session = TaskSession(output_str=output_str, subject=subject,
                           output_dir=output_dir, settings_file=settings_fn, 
-                          run=run, range=range, eyetracker_on=use_eyetracker)
+                          run=run, range=range, eyetracker_on=use_eyetracker,
+                          calibrate_eyetracker=calibrate_eyetracker)
 
     session.create_trials()
     session.run()
@@ -202,7 +203,9 @@ if __name__ == "__main__":
     argparser.add_argument('run', type=int, help='Run')
     argparser.add_argument('range', choices=['narrow', 'wide'], help='Range (either narrow or wide)')
     argparser.add_argument('--settings', type=str, help='Settings label', default='default')
+    argparser.add_argument('--calibrate_eyetracker', action='store_true', dest='calibrate_eyetracker')
+
 
     args = argparser.parse_args()
 
-    main(args.subject, args.session, args.run, args.range, args.settings)
+    main(args.subject, args.session, args.run, args.range, args.settings, calibrate_eyetracker=args.calibrate_eyetracker)

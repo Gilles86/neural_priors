@@ -102,8 +102,8 @@ class FeedbackTrial(Trial):
 
 class FeedbackSession(EstimationSession):
 
-    def __init__(self, output_str, range, subject=None, output_dir=None, settings_file=None, run=None, eyetracker_on=False):
-        super().__init__(output_str, range, output_dir=output_dir, settings_file=settings_file, eyetracker_on=eyetracker_on, subject=subject, run=run)
+    def __init__(self, output_str, range, subject=None, output_dir=None, settings_file=None, run=None, eyetracker_on=False, calibrate_eyetracker=False):
+        super().__init__(output_str, range, output_dir=output_dir, settings_file=settings_file, eyetracker_on=eyetracker_on, subject=subject, run=run, calibrate_eyetracker=calibrate_eyetracker)
         aperture_radius = self.settings['cloud'].get('aperture_radius')
         # self.response_slider.pos = (0, -aperture_radius * 1.5)
 
@@ -134,6 +134,7 @@ if __name__ == '__main__':
     parser.add_argument('run', type=int, help='Run', default=0)
     parser.add_argument('range', choices=['narrow', 'wide'], help='Range (either narrow or wide)')
     parser.add_argument('--settings', type=str, default='default', help='Which settings to use (default=default)')
+    parser.add_argument('--calibrate_eyetracker', action='store_true', dest='calibrate_eyetracker')
 
     args = parser.parse_args()
     output_dir, output_str = get_output_dir_str(args.subject, args.session, 'feedback', args.run)
@@ -143,7 +144,8 @@ if __name__ == '__main__':
     session = FeedbackSession(output_str=output_str,
                               subject=args.subject,
                               range=args.range,
-                              eyetracker_on=use_eyetracker, output_dir=output_dir, settings_file=settings_fn, run=args.run)
+                              eyetracker_on=use_eyetracker, output_dir=output_dir, settings_file=settings_fn, run=args.run,
+                              calibrate_eyetracker=args.calibrate_eyetracker)
 
     session.create_trials()
     session.run()
