@@ -17,9 +17,9 @@ def main(subject, session, bids_folder='/data'):
     except ValueError:
         pass
 
-    sourcedata_root = op.join(bids_folder, 'sourcedata', 'mri', f'sub-{subject}', f'ses-{session}')
+    sourcedata_root = op.join(bids_folder, 'sourcedata', 'mri', f'SNS_MRI_NJM_S{subject}s{session}')
 
-    t1w = glob.glob(op.join(sourcedata_root, '*_t1w*.nii'))
+    t1w = glob.glob(op.join(sourcedata_root, '*t1w*.nii'))
     flair = glob.glob(op.join(sourcedata_root, '*flair*.nii'))
 
     target_dir = op.join(bids_folder, f'sub-{subject}', f'ses-{session}', 'anat')
@@ -32,8 +32,10 @@ def main(subject, session, bids_folder='/data'):
     
     if len(flair) == 1:
         shutil.copy(flair[0], op.join(target_dir, f'sub-{subject}_ses-{session}_FLAIR.nii'))
+    elif len(flair) == 0:
+        print("No FLAIR found")
     else:
-        raise ValueError(f"More than 1/no FLAIR {flair}!")
+        raise ValueError(f"More than 1 FLAIR {flair}!")
 
 
     # # # *** FUNCTIONAL DATA ***
