@@ -181,18 +181,18 @@ class Subject(object):
             
             anat_mask = op.join(self.derivatives_dir
             ,'ips_masks',
-            f'sub-{self.subject}',
+            f'sub-{self.subject_id}',
             'anat',
-            f'sub-{self.subject}_space-T1w_desc-{roi}_mask.nii.gz'
+            f'sub-{self.subject_id}_space-T1w_desc-{roi}_mask.nii.gz'
             )
 
             if epi_space:
                 epi_mask = op.join(self.derivatives_dir
                                     ,'ips_masks',
-                                    f'sub-{self.subject}',
+                                    f'sub-{self.subject_id}',
                                     'func',
                                     f'ses-{session}',
-                                    f'sub-{self.subject}_space-T1w_desc-{roi}_mask.nii.gz')
+                                    f'sub-{self.subject_id}_space-T1w_desc-{roi}_mask.nii.gz')
 
                 if not op.exists(epi_mask):
                     if not op.exists(op.dirname(epi_mask)):
@@ -241,7 +241,7 @@ class Subject(object):
 
         for parameter_key in keys:
             if cross_validated:
-                fn = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject}', f'ses-{session}', 
+                fn = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 
                         'func', f'sub-{self.subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
             else:
                 if parameter_key == 'cvr2':
