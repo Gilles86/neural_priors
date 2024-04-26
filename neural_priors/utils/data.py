@@ -20,6 +20,8 @@ class Subject(object):
         self.subject_id = subject_id
         self.bids_folder = bids_folder
 
+        self.derivatives_dir = op.join(bids_folder, 'derivatives')
+
     def get_sessions(self):
 
         if self.subject_id in ['02']:
@@ -334,3 +336,15 @@ class Subject(object):
             parameters.append(pars)
 
         return pd.concat(parameters, axis=1, keys=parameter_keys, names=['parameter'])
+
+    def get_t1w(self):
+
+        if self.get_sessions() is [1, 2]:
+            raise NotImplementedError
+        else:
+            t1w = op.join(self.bids_folder, 'derivatives', 'fmriprep', f'sub-{self.subject_id}', 'ses-1', 'anat', f'sub-{self.subject_id}_ses-1_desc-preproc_T1w.nii.gz')
+
+            if not op.exists(t1w):
+                raise ValueError(f'{t1w} does not exist')
+
+            return image.load_img(t1w)
