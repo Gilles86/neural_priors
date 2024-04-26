@@ -6,7 +6,7 @@ from nilearn import image, surface
 from nilearn.maskers import NiftiMasker
 
 def get_all_subject_ids():
-    return [f'{i:02d}' for i in range(1, 9)]
+    return [f'{i:02d}' for i in range(1, 11)]
 
 class Subject(object):
 
@@ -24,7 +24,7 @@ class Subject(object):
 
     def get_sessions(self):
 
-        if self.subject_id in ['02']:
+        if self.subject_id in ['01', '02']:
             return [1,2]
         else:
             return [1]
