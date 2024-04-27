@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=fit_st_denoise1
+#SBATCH --job-name=fit_st_denoise1_smoothed
 #SBATCH --output=/home/gdehol/logs/fit_st_denoise_smoothed_%A-%a.txt
 #SBATCH --ntasks=1
-#SBATCH -c 32
+#SBATCH -c 16
 #SBATCH --time=45:00
 
 . $HOME/init_conda.sh

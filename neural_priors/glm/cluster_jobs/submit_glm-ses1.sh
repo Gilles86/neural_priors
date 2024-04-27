@@ -2,7 +2,7 @@
 #SBATCH --job-name=fit_st_denoise1
 #SBATCH --output=/home/gdehol/logs/fit_st_denoise_%A-%a.txt
 #SBATCH --ntasks=1
-#SBATCH -c 32
+#SBATCH -c 16
 #SBATCH --time=45:00
 
 . $HOME/init_conda.sh
