@@ -15,6 +15,8 @@ def main(subject, session, bids_folder):
     d['trial_nr'] = (d.index.get_level_values('run') - 1) * 30 + d['trial_nr']
     d = d.set_index('trial_nr', append=True).droplevel(1) 
 
+    d = d[d['onset'] > 0.0]
+
     stimulus = d.xs('stimulus', 0, 'event_type')[['onset', 'n']]
     stimulus['trial_type'] = 'stimulus'
 
