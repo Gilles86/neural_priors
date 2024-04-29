@@ -74,7 +74,7 @@ def main(subject, session, smoothed, bids_folder, on_response=False, range_n=Non
             fixed_pars=['mu', 'sd'],
         r2_atol=0.00001)
 
-    optimizer.fit(init_pars=optimizer.estimated_parameters, learning_rate=.001, store_intermediate_parameters=False, max_n_iterations=10000,
+    optimizer.fit(init_pars=optimizer.estimated_parameters, learning_rate=.005, store_intermediate_parameters=False, max_n_iterations=10000,
         min_n_iterations=1000,
         r2_atol=0.00001)
     if session is None:
