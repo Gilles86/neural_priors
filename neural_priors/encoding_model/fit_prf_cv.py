@@ -51,10 +51,14 @@ def main(subject, session, smoothed, bids_folder):
     # runs = paradigm.index.unique(level='run')
     cv_r2s = []
 
+    keys = []
+
     for (test_session, test_run), _ in paradigm.groupby(level=['session', 'run']):
 
+        keys.append((test_session, test_run))
+
         test_data, test_paradigm = data.loc[(test_session, test_run)].copy(
-        ), paradigm.loc[(test_session, test_run)].copy()
+        ).astype(np.float32), paradigm.loc[(test_session, test_run)].copy().astype(np.float32)
         print(test_data, test_paradigm)
 
         train_data, train_paradigm = data.drop((test_session, test_run)).copy(), paradigm.drop((test_session, test_run)).copy()
@@ -63,11 +67,6 @@ def main(subject, session, smoothed, bids_folder):
 
         optimizer = ParameterFitter(model, train_data, train_paradigm)
         grid_parameters = optimizer.fit_grid(mus, sds, amplitudes, baselines, use_correlation_cost=True)
-
-        print(model.predict(paradigm=test_paradigm, parameters=grid_parameters))
-        print(optimizer.data)
-
-        print(optimizer.data - model.predict(paradigm=train_paradigm, parameters=grid_parameters))
 
         grid_parameters = optimizer.refine_baseline_and_amplitude(grid_parameters, n_iterations=5)
 
@@ -92,7 +91,7 @@ def main(subject, session, smoothed, bids_folder):
 
         cv_r2s.append(cv_r2)
 
-    cv_r2 = pd.concat(cv_r2s, keys=runs, names=['run']).groupby(level=1, axis=0).mean()
+    cv_r2 = pd.concat(cv_r2s, keys=keys, names=['run']).groupby(level=1, axis=0).mean()
 
     # target_fn = op.join(
     #     target_dir, f'sub-{subject}_ses-{session}_desc-cvr2.optim_space-T1w_pars.nii.gz')
