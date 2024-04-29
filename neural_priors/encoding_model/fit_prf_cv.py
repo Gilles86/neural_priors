@@ -21,7 +21,7 @@ def main(subject, session, smoothed, bids_folder):
 
     if session is None:
         target_dir = op.join(bids_folder, 'derivatives', key, f'sub-{subject}', 'func')
-        fn_template = op.join(target_dir, 'sub-{subject}_run-{run}_desc-{par}.optim_space-T1w_pars.nii.gz')
+        fn_template = op.join(target_dir, 'sub-{subject}_ses-{session}_run-{run}_desc-{par}.optim_space-T1w_pars.nii.gz')
     else:
         target_dir = op.join(bids_folder, 'derivatives', key, f'sub-{subject}', f'ses-{session}', 'func')
         fn_template = op.join(target_dir, 'sub-{subject}_ses-{session}_run-{run}_desc-{par}.optim_space-T1w_pars.nii.gz')
@@ -93,11 +93,12 @@ def main(subject, session, smoothed, bids_folder):
         cv_r2s.append(cv_r2)
         keys.append((test_session, test_run))
 
-    cv_r2 = pd.concat(cv_r2s, keys=keys, names=['run']).groupby(level=1, axis=0).mean()
-
     cv_r2 = pd.concat(cv_r2s, keys=keys, names=['session', 'run']).groupby(level=2, axis=0).mean()
 
-    target_fn = fn_template.replace('_run-{run}_', '_').format(subject=subject, session=session, par='cvr2')
+    if session is None:
+        target_fn = fn_template.replace('_ses-{session}_run-{run}_', '_').format(subject=subject, session=session, par='cvr2')
+    else:
+        target_fn = fn_template.replace('_run-{run}_', '_').format(subject=subject, session=session, par='cvr2')
 
     masker.inverse_transform(cv_r2).to_filename(target_fn)
 
