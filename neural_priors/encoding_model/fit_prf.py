@@ -7,6 +7,7 @@ from braincoder.optimize import ParameterFitter
 import numpy as np
 from braincoder.utils import get_rsq
 from nilearn import image
+import pandas as pd
 
 def main(subject, session, smoothed, bids_folder, on_response=False, range_n=None):
 
@@ -51,8 +52,7 @@ def main(subject, session, smoothed, bids_folder, on_response=False, range_n=Non
         paradigm = paradigm.loc[range_mask]
 
     masker = sub.get_brain_mask(session=session, epi_space=True, return_masker=True)
-    data = masker.fit_transform(data)
-
+    data = pd.DataFrame(masker.fit_transform(data), index=paradigm.index)
 
     model = LogGaussianPRF()
 
@@ -61,7 +61,7 @@ def main(subject, session, smoothed, bids_folder, on_response=False, range_n=Non
     amplitudes = np.array([1.], dtype=np.float32)
     baselines = np.array([0], dtype=np.float32)
 
-    optimizer = ParameterFitter(model, data, paradigm.values)
+    optimizer = ParameterFitter(model, data.astype(np.float32), paradigm.astype(np.float32))
 
     grid_parameters = optimizer.fit_grid(mus, sds, amplitudes, baselines, use_correlation_cost=True)
     grid_parameters = optimizer.refine_baseline_and_amplitude(grid_parameters, n_iterations=5)
