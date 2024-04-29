@@ -8,16 +8,22 @@ import numpy as np
 from braincoder.utils import get_rsq
 from sklearn.model_selection import LeaveOneGroupOut
 import pandas as pd
+from nilearn import image
 
-def main(subject, session, smoothed, bids_folder):
+def main(subject, session, smoothed, bids_folder, range_n=None):
 
     if session == 0:
         session = None
+
+    assert(range_n in [None, 'wide', 'narrow']), "range_n must be either None, 'wide' or 'narrow'"
 
     key = 'encoding_model.cv.denoise'
 
     if smoothed:
         key += '.smoothed'
+
+    if range_n is not None:
+        key += f'.range_{range_n}'
 
     if session is None:
         target_dir = op.join(bids_folder, 'derivatives', key, f'sub-{subject}', 'func')
@@ -33,15 +39,28 @@ def main(subject, session, smoothed, bids_folder):
 
     data = sub.get_single_trial_estimates(session, smoothed=smoothed)
 
-    masker = sub.get_brain_mask(session=session, epi_space=True, return_masker=True)
 
-    paradigm = sub.get_behavioral_data(session=session, tasks=['estimation_task', ])['n'].droplevel(['subject', 'task', -1])
+    behavior = sub.get_behavioral_data(session=session, tasks=['estimation_task', ])
+
+    paradigm = behavior['n']
+
+    if range_n is not None:
+        range_mask = behavior['range'] == range_n
+
+    print(paradigm)
+    print(range_mask)
+
+    if range_n is not None:
+        data = image.index_img(data, range_mask)
+        paradigm = paradigm.loc[range_mask]
+
+    paradigm = paradigm.droplevel(['subject', 'task', -1])
 
     if session is not None:
         paradigm = pd.concat([paradigm], keys=[session], names=['session'])
 
+    masker = sub.get_brain_mask(session=session, epi_space=True, return_masker=True)
     data = pd.DataFrame(masker.fit_transform(data), index=paradigm.index)
-
     print(data)
     print(paradigm)
 
@@ -111,6 +130,8 @@ if __name__ == '__main__':
     parser.add_argument('session', type=int)
     parser.add_argument('--smoothed', action='store_true')
     parser.add_argument('--bids_folder', default='/data/ds-neuralpriors')
+    parser.add_argument('--range', default=None)
     args = parser.parse_args()
 
-    main(args.subject, args.session, smoothed=args.smoothed, bids_folder=args.bids_folder)
+    main(args.subject, args.session, smoothed=args.smoothed, bids_folder=args.bids_folder,
+         range_n=args.range)
