@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=fit_st_denoise1_smoothed
-#SBATCH --output=/home/gdehol/logs/fit_st_denoise_smoothed_%A-%a.txt
+#SBATCH --job-name=fit_st_denoise_ses-1_smoothed
+#SBATCH --output=/home/gdehol/logs/fit_st_denoise_ses-1_smoothed_%A-%a.txt
 #SBATCH --ntasks=1
 #SBATCH -c 16
 #SBATCH --time=45:00
