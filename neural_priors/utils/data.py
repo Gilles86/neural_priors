@@ -145,17 +145,29 @@ class Subject(object):
         if smoothed:
             dir += '.smoothed'
 
-        dir = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 'func')
+        if session is None:
+            dir = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func')
+            fn = op.join(dir, f'sub-{self.subject_id}_task-task_space-T1w_desc-{type}_pe.nii.gz')
+        else:
+            dir = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 'func')
+            fn = op.join(dir, f'sub-{self.subject_id}_ses-{session}_task-task_space-T1w_desc-{type}_pe.nii.gz')
 
-        fn = op.join(dir, f'sub-{self.subject_id}_ses-{session}_task-task_space-T1w_desc-{type}_pe.nii.gz')
 
-        return image.load_img(fn)
+
+        im = image.load_img(fn)
+
+        n_volumes = 240 if session is not None else 480
+        assert(im.shape[3] == n_volumes), f'Expected {n_volumes} volumes, got {im.shape[3]}'
+
+        return im
 
     def get_brain_mask(self, session=1, epi_space=True, return_masker=True):
 
         if not epi_space:
             raise ValueError('Only EPI space is supported')
-        
+
+        session = 1 if session is None else session
+
         fn = op.join(self.bids_folder, 'derivatives', 'fmriprep', f'sub-{self.subject_id}',
                         f'ses-{session}', 'func', f'sub-{self.subject_id}_ses-{session}_task-task_run-2_space-T1w_desc-brain_mask.nii.gz')
 
