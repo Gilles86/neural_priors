@@ -47,9 +47,6 @@ def main(subject, session, smoothed, bids_folder, range_n=None):
     if range_n is not None:
         range_mask = behavior['range'] == range_n
 
-    print(paradigm)
-    print(range_mask)
-
     if range_n is not None:
         data = image.index_img(data, range_mask)
         paradigm = paradigm.loc[range_mask]
@@ -66,8 +63,8 @@ def main(subject, session, smoothed, bids_folder, range_n=None):
 
     model = LogGaussianPRF()
 
-    mus = np.linspace(5, 40, 30, dtype=np.float32)
-    sds = np.linspace(5, 20, 30, dtype=np.float32)
+    mus = np.linspace(5, 40, 50, dtype=np.float32)
+    sds = np.linspace(3, 20, 50, dtype=np.float32)
     amplitudes = np.array([1.], dtype=np.float32)
     baselines = np.array([0], dtype=np.float32)
 
@@ -92,8 +89,8 @@ def main(subject, session, smoothed, bids_folder, range_n=None):
 
         grid_parameters = optimizer.refine_baseline_and_amplitude(grid_parameters, n_iterations=5)
 
-        optimizer.fit(init_pars=grid_parameters, learning_rate=.05, store_intermediate_parameters=False, max_n_iterations=10000,
-            r2_atol=0.0001)
+        optimizer.fit(init_pars=grid_parameters, learning_rate=.001, store_intermediate_parameters=False, max_n_iterations=10000,
+            r2_atol=0.0001, min_n_iterations=1000)
 
         # target_fn = op.join(target_dir, f'sub-{subject}_ses-{session}_run-{test_run}_desc-r2.optim_space-T1w_pars.nii.gz')
         target_fn = fn_template.format(subject=subject, session=session, run=test_run, par='r2')
@@ -108,6 +105,8 @@ def main(subject, session, smoothed, bids_folder, range_n=None):
 
         target_fn = fn_template.format(subject=subject, session=session, run=test_run, par='cvr2')
         masker.inverse_transform(cv_r2).to_filename(target_fn)
+
+        print(f'{cv_r2.isnull().sum()} voxels have a NaN value in the cv_r2 map')
 
         cv_r2s.append(cv_r2)
         keys.append((test_session, test_run))
