@@ -73,7 +73,7 @@ def main(subject, session, bids_folder, confounds=False, smoothed=False):
 
     opt = dict()
 
-    # opt['sessionindicator'] = np.array([session for (session, run), d in dm.groupby(['session', 'run'])])[np.newaxis, :]
+    opt['sessionindicator'] = np.array([session for (session, run), d in dm.groupby(['session', 'run'])])[np.newaxis, :]
     # print(opt['sessionindicator'])
 
     # set important fields for completeness (but these would be enabled by default)
