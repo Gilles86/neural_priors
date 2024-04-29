@@ -57,7 +57,7 @@ def main(subject, session, smoothed, bids_folder, on_response=False, range_n=Non
     model = LogGaussianPRF()
 
     mus = np.linspace(5, 40, 30, dtype=np.float32)
-    sds = np.linspace(5, 15, 30, dtype=np.float32)
+    sds = np.linspace(3, 15, 30, dtype=np.float32)
     amplitudes = np.array([1.], dtype=np.float32)
     baselines = np.array([0], dtype=np.float32)
 
@@ -69,7 +69,8 @@ def main(subject, session, smoothed, bids_folder, on_response=False, range_n=Non
     pred = model.predict(paradigm, grid_parameters)
     r2 = get_rsq(data, pred)
 
-    optimizer.fit(init_pars=grid_parameters, learning_rate=.05, store_intermediate_parameters=False, max_n_iterations=10000,
+    optimizer.fit(init_pars=grid_parameters, learning_rate=.001, store_intermediate_parameters=False, max_n_iterations=10000,
+        min_n_iterations=1000,
         r2_atol=0.00001)
 
     if session is None:
