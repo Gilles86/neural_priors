@@ -4,6 +4,7 @@ import pandas as pd
 import os
 from nilearn import image, surface
 from nilearn.maskers import NiftiMasker
+from nilearn.masking import apply_mask
 
 def get_all_subject_ids():
     return [f'{i:02d}' for i in range(1, 11)]
@@ -24,7 +25,7 @@ class Subject(object):
 
     def get_sessions(self):
 
-        if self.subject_id in ['01', '02']:
+        if self.subject_id in ['01', '02', '03', '04']:
             return [1,2]
         else:
             return [1]
@@ -234,13 +235,15 @@ class Subject(object):
             roi=None,
             return_image=False):
 
-        dir = 'encoding_model.denoise'
+        dir = 'encoding_model'
 
         if cross_validated:
             if run is None:
                 raise Exception('Give run')
 
             dir += '.cv'
+
+        dir += '.denoise'
 
         if smoothed:
             dir += '.smoothed'
@@ -265,7 +268,8 @@ class Subject(object):
                     fn = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 
                             'func', f'sub-{self.subject_id}_ses-{session}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
             
-            pars = pd.Series(masker.fit_transform(fn).ravel())
+            # pars = pd.Series(masker.fit_transform(fn).ravel())
+            pars = pd.Series(apply_mask(fn, mask, ensure_finite=False))
             parameters.append(pars)
 
         parameters =  pd.concat(parameters, axis=1, keys=keys, names=['parameter'])
