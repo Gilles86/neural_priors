@@ -154,7 +154,7 @@ class Subject(object):
 
 
 
-        im = image.load_img(fn)
+        im = image.load_img(fn, dtype=np.float32)
 
         n_volumes = 240 if session is not None else 480
         assert(im.shape[3] == n_volumes), f'Expected {n_volumes} volumes, got {im.shape[3]}'
