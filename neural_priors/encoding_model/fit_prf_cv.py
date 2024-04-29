@@ -36,6 +36,10 @@ def main(subject, session, smoothed, bids_folder):
     masker = sub.get_brain_mask(session=session, epi_space=True, return_masker=True)
 
     paradigm = sub.get_behavioral_data(session=session, tasks=['estimation_task', ])['n'].droplevel(['subject', 'task', -1])
+
+    if session is not None:
+        paradigm = pd.concat([paradigm], keys=[session], names=['session'])
+
     data = pd.DataFrame(masker.fit_transform(data), index=paradigm.index)
 
     print(data)
@@ -55,7 +59,6 @@ def main(subject, session, smoothed, bids_folder):
 
     for (test_session, test_run), _ in paradigm.groupby(level=['session', 'run']):
 
-        keys.append((test_session, test_run))
 
         test_data, test_paradigm = data.loc[(test_session, test_run)].copy(
         ).astype(np.float32), paradigm.loc[(test_session, test_run)].copy().astype(np.float32)
@@ -79,24 +82,22 @@ def main(subject, session, smoothed, bids_folder):
 
         for par, values in optimizer.estimated_parameters.T.iterrows():
             print(values)
-            # target_fn = op.join(target_dir, f'sub-{subject}_ses-{session}_run-{test_run}_desc-{par}.optim_space-T1w_pars.nii.gz')
             target_fn = fn_template.format(subject=subject, session=session, run=test_run, par=par)
             masker.inverse_transform(values).to_filename(target_fn)
 
         cv_r2 = get_rsq(test_data, model.predict(paradigm=test_paradigm, parameters=optimizer.estimated_parameters))
 
-        # target_fn = op.join(target_dir, f'sub-{subject}_ses-{session}_run-{test_run}_desc-cvr2.optim_space-T1w_pars.nii.gz')
         target_fn = fn_template.format(subject=subject, session=session, run=test_run, par='cvr2')
         masker.inverse_transform(cv_r2).to_filename(target_fn)
 
         cv_r2s.append(cv_r2)
+        keys.append((test_session, test_run))
 
     cv_r2 = pd.concat(cv_r2s, keys=keys, names=['run']).groupby(level=1, axis=0).mean()
 
-    # target_fn = op.join(
-    #     target_dir, f'sub-{subject}_ses-{session}_desc-cvr2.optim_space-T1w_pars.nii.gz')
+    cv_r2 = pd.concat(cv_r2s, keys=keys, names=['session', 'run']).groupby(level=2, axis=0).mean()
 
-    target_fn = fn_template.format(subject=subject, session=session, run=test_run, par='cvr2')
+    target_fn = fn_template.replace('_run-{run}_', '_').format(subject=subject, session=session, par='cvr2')
 
     masker.inverse_transform(cv_r2).to_filename(target_fn)
 
