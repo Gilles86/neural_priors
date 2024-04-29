@@ -105,12 +105,18 @@ def main(subject, session, bids_folder, confounds=False, smoothed=False):
     betas = image.new_img_like(ims[0], betas)
     stim_betas = image.index_img(betas, slice(None, None, 2))
     resp_betas = image.index_img(betas, slice(1, None, 2))
-    stim_betas.to_filename(op.join(base_dir, f'sub-{subject}_ses-{session}_task-task_space-T1w_desc-stim_pe.nii.gz'))
-    resp_betas.to_filename(op.join(base_dir, f'sub-{subject}_ses-{session}_task-task_space-T1w_desc-response_pe.nii.gz'))
+    
+    if session is None:
+        fn_template = op.join(base_dir, 'sub-{subject}_task-task_space-T1w_desc-{par}_pe.nii.gz')
+    else:
+        fn_template = op.join(base_dir, 'sub-{subject}_ses-{session}_task-task_space-T1w_desc-{par}_pe.nii.gz')
+
+    stim_betas.to_filename(fn_template.format(subject=subject, session=session, par='stim'))
+    resp_betas.to_filename(fn_template.format(subject=subject, session=session, par='response'))
 
     r2 = results_glmsingle['typed']['R2']
     r2 = image.new_img_like(ims[0], r2)
-    r2.to_filename(op.join(base_dir, f'sub-{subject}_ses-{session}_task-task_space-T1w_desc-R2.nii.gz'))
+    r2.to_filename(fn_template.format(subject=subject, session=session, par='R2'))
 
 
 if __name__ == '__main__':
