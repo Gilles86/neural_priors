@@ -47,9 +47,6 @@ def main(subject, session, smoothed, bids_folder, range_n=None):
     if range_n is not None:
         range_mask = behavior['range'] == range_n
 
-    print(paradigm)
-    print(range_mask)
-
     if range_n is not None:
         data = image.index_img(data, range_mask)
         paradigm = paradigm.loc[range_mask]
@@ -96,17 +93,17 @@ def main(subject, session, smoothed, bids_folder, range_n=None):
             r2_atol=0.0001)
 
         # target_fn = op.join(target_dir, f'sub-{subject}_ses-{session}_run-{test_run}_desc-r2.optim_space-T1w_pars.nii.gz')
-        target_fn = fn_template.format(subject=subject, session=session, run=test_run, par='r2')
+        target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par='r2')
         masker.inverse_transform(optimizer.r2).to_filename(target_fn)
 
         for par, values in optimizer.estimated_parameters.T.iterrows():
             print(values)
-            target_fn = fn_template.format(subject=subject, session=session, run=test_run, par=par)
+            target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par=par)
             masker.inverse_transform(values).to_filename(target_fn)
 
         cv_r2 = get_rsq(test_data, model.predict(paradigm=test_paradigm, parameters=optimizer.estimated_parameters))
 
-        target_fn = fn_template.format(subject=subject, session=session, run=test_run, par='cvr2')
+        target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par='cvr2')
         masker.inverse_transform(cv_r2).to_filename(target_fn)
 
         cv_r2s.append(cv_r2)
