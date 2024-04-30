@@ -90,32 +90,32 @@ def main(subject, session, smoothed, bids_folder, range_n=None):
         grid_parameters = optimizer.refine_baseline_and_amplitude(grid_parameters, n_iterations=5)
 
         optimizer.fit(init_pars=grid_parameters, learning_rate=.05, store_intermediate_parameters=False, max_n_iterations=10000,
-            fixed_pars=['mu', 'sigma'],
+            fixed_pars=['mu', 'sd'],
             r2_atol=0.0001)
 
-        target_fn = fn_template.format(subject=subject, session=session, run=test_run, par='r2', optimizer='grid')
+        target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par='r2', optimizer='grid')
         masker.inverse_transform(optimizer.r2).to_filename(target_fn)
 
         for par, values in optimizer.estimated_parameters.T.iterrows():
             print(values)
-            target_fn = fn_template.format(subject=subject, session=session, run=test_run, par=par, optimizer='grid')
+            target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par=par, optimizer='grid')
             masker.inverse_transform(values).to_filename(target_fn)
 
         optimizer.fit(init_pars=optimizer.estimated_parameters, learning_rate=.005, store_intermediate_parameters=False, max_n_iterations=10000,
             r2_atol=0.0001, min_n_iterations=1000)
 
         # target_fn = op.join(target_dir, f'sub-{subject}_ses-{session}_run-{test_run}_desc-r2.optim_space-T1w_pars.nii.gz')
-        target_fn = fn_template.format(subject=subject, session=session, run=test_run, par='r2', optimizer='optim')
+        target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par='r2', optimizer='optim')
         masker.inverse_transform(optimizer.r2).to_filename(target_fn)
 
         for par, values in optimizer.estimated_parameters.T.iterrows():
             print(values)
-            target_fn = fn_template.format(subject=subject, session=session, run=test_run, par=par, optimizer='optim')
+            target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par=par, optimizer='optim')
             masker.inverse_transform(values).to_filename(target_fn)
 
         cv_r2 = get_rsq(test_data, model.predict(paradigm=test_paradigm, parameters=optimizer.estimated_parameters))
 
-        target_fn = fn_template.format(subject=subject, session=session, run=test_run, par='cvr2', optimizer='optim')
+        target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par='cvr2', optimizer='optim')
         masker.inverse_transform(cv_r2).to_filename(target_fn)
 
         print(f'{cv_r2.isnull().sum()} voxels have a NaN value in the cv_r2 map')
@@ -125,10 +125,10 @@ def main(subject, session, smoothed, bids_folder, range_n=None):
 
     cv_r2 = pd.concat(cv_r2s, keys=keys, names=['session', 'run']).groupby(level=2, axis=0).mean()
 
-    if session is None:
-        target_fn = fn_template.replace('_ses-{session}_run-{run}_', '_').format(subject=subject, session=session, par='cvr2')
+    if session is not None:
+        target_fn = fn_template.replace('_ses-{session}_run-{run}_', '_').format(subject=subject, session=session, par='cvr2', optimizer='optim')
     else:
-        target_fn = fn_template.replace('_run-{run}_', '_').format(subject=subject, session=session, par='cvr2')
+        target_fn = fn_template.replace('_run-{run}_', '_').format(subject=subject, session=session, par='cvr2', optimizer='optim')
 
     masker.inverse_transform(cv_r2).to_filename(target_fn)
 
