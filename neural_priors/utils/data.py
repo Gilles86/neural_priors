@@ -5,16 +5,17 @@ import os
 from nilearn import image, surface
 from nilearn.maskers import NiftiMasker
 from nilearn.masking import apply_mask
+import pkg_resources
+import yaml
 
 def get_all_subject_ids():
-    return [f'{i:02d}' for i in range(1, 11)]
+    with pkg_resources.resource_stream('neural_priors', '/data/subjects.yml') as stream:
+        return yaml.safe_load(stream).keys()
 
 class Subject(object):
 
 
     def __init__(self, subject_id, bids_folder='/data/ds-neuralpriors'):
-
-
         if type(subject_id) == int:
             subject_id = f'{subject_id:02d}'
         
@@ -24,11 +25,9 @@ class Subject(object):
         self.derivatives_dir = op.join(bids_folder, 'derivatives')
 
     def get_sessions(self):
-
-        if self.subject_id in ['01', '02', '03', '04']:
-            return [1,2]
-        else:
-            return [1]
+        assert self.subject_id in get_all_subject_ids(), f'{self.subject_id} not in {get_all_subject_ids()}'
+        with pkg_resources.resource_stream('neural_priors', '/data/subjects.yml') as stream:
+            return yaml.safe_load(stream)[self.subject_id]
 
     def get_behavioral_data(self, session=None, tasks=None, raw=False, add_info=True):
 
