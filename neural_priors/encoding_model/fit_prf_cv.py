@@ -125,7 +125,7 @@ def main(subject, session, smoothed, bids_folder, range_n=None):
 
     cv_r2 = pd.concat(cv_r2s, keys=keys, names=['session', 'run']).groupby(level=2, axis=0).mean()
 
-    if session is not None:
+    if session is None:
         target_fn = fn_template.replace('_ses-{session}_run-{run}_', '_').format(subject=subject, session=session, par='cvr2', optimizer='optim')
     else:
         target_fn = fn_template.replace('_run-{run}_', '_').format(subject=subject, session=session, par='cvr2', optimizer='optim')
