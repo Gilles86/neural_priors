@@ -114,7 +114,8 @@ class Subject(object):
     def get_onsets(self, session=1):
 
         if session is None:
-            return pd.concat([self.get_onsets(session) for session in self.get_sessions()], keys=self.get_sessions(), names=['session'])
+            sessions = [1,2]
+            return pd.concat([self.get_onsets(session) for session in sessions], keys=sessions, names=['session'])
 
         runs = self.get_runs(session)
 
