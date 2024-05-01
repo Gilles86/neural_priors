@@ -179,6 +179,9 @@ class Subject(object):
 
     def get_volume_mask(self, roi=None, session=None, epi_space=False):
 
+        if session is None:
+            session = 1
+
         base_mask = op.join(self.bids_folder, 'derivatives', f'fmriprep/sub-{self.subject_id}/ses-{session}/func/sub-{self.subject_id}_ses-{session}_task-task_run-1_space-T1w_desc-brain_mask.nii.gz')
         base_mask = image.load_img(base_mask, dtype='int32') # To prevent weird nilearn warning
 
@@ -255,19 +258,26 @@ class Subject(object):
         mask = self.get_volume_mask(session=session, roi=roi, epi_space=True)
         masker = NiftiMasker(mask)
 
-        for parameter_key in keys:
-            if cross_validated:
-                fn = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 
-                        'func', f'sub-{self.subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
+        if cross_validated:
+            if session is None:
+                raise ValueError('Session must be given for cross-validated data')
+            fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func',
+                                    f'sub-{self.subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
+        else:
+            if session is None:
+                fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
+                cvr2_template = op.join(self.bids_folder, 'derivatives', dir.replace('encoding_model', 'encoding_model.cv'), f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')
             else:
-                if parameter_key == 'cvr2':
-                    fn = op.join(self.bids_folder, 'derivatives', dir.replace('encoding_model', 'encoding_model.cv'), f'sub-{self.subject_id}', f'ses-{session}', 
-                            'func', f'sub-{self.subject_id}_ses-{session}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
-                else:
-                    fn = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 
-                            'func', f'sub-{self.subject_id}_ses-{session}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
+                fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 'func', 'sub-{subject_id}_ses-{session}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
+                cvr2_template = op.join(self.bids_folder, 'derivatives', dir.replace('encoding_model', 'encoding_model.cv'), f'sub-{self.subject_id}', f'ses-{session}', 'func', 'sub-{subject_id}_ses-{session}_desc-cvr2.optim_space-T1w_pars.nii.gz')
+
+        for parameter_key in keys:
+
+            if (parameter_key == 'cvr2') and (not cross_validated):
+                fn = cvr2_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id)
+            else:
+                fn = fn_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id)
             
-            # pars = pd.Series(masker.fit_transform(fn).ravel())
             pars = pd.Series(apply_mask(fn, mask, ensure_finite=False))
             parameters.append(pars)
 
