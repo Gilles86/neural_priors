@@ -2,19 +2,22 @@ import os
 import os.path as op
 import argparse
 from neural_priors.utils.data import Subject
-from braincoder.models import LogGaussianPRF
+from braincoder.models import LogGaussianPRF, GaussianPRF
 from braincoder.optimize import ParameterFitter
 import numpy as np
 from braincoder.utils import get_rsq
 from nilearn import image
 import pandas as pd
 
-def main(subject, session, smoothed, bids_folder, on_response=False, range_n=None):
+def main(subject, session, smoothed, bids_folder, on_response=False, range_n=None, gaussian=False):
 
     if session == 0:
         session = None
 
     key = 'encoding_model.denoise'
+
+    if gaussian:
+        key += '.gaussian'
 
     if smoothed:
         key += '.smoothed'
@@ -54,16 +57,19 @@ def main(subject, session, smoothed, bids_folder, on_response=False, range_n=Non
     masker = sub.get_brain_mask(session=session, epi_space=True, return_masker=True)
     data = pd.DataFrame(masker.fit_transform(data), index=paradigm.index)
 
-    model = LogGaussianPRF()
+    if gaussian:
+        model = GaussianPRF()
+    else:
+        model = LogGaussianPRF(parameterisation='mode_fwhm_natural')
 
-    mus = np.linspace(5, 40, 30, dtype=np.float32)
-    sds = np.linspace(3, 15, 30, dtype=np.float32)
+    modes = np.linspace(5, 40, 30, dtype=np.float32)
+    fwhms = np.linspace(3, 30, 30, dtype=np.float32)
     amplitudes = np.array([1.], dtype=np.float32)
     baselines = np.array([0], dtype=np.float32)
 
     optimizer = ParameterFitter(model, data.astype(np.float32), paradigm.astype(np.float32))
 
-    grid_parameters = optimizer.fit_grid(mus, sds, amplitudes, baselines, use_correlation_cost=True)
+    grid_parameters = optimizer.fit_grid(modes, fwhms, amplitudes, baselines, use_correlation_cost=True)
     grid_parameters = optimizer.refine_baseline_and_amplitude(grid_parameters, n_iterations=5)
 
     pred = model.predict(paradigm, grid_parameters)
@@ -102,7 +108,8 @@ if __name__ == '__main__':
     parser.add_argument('--on_response', action='store_true')
     parser.add_argument('--bids_folder', default='/data/ds-neuralpriors')
     parser.add_argument('--range', default=None)
+    parser.add_argument('--gaussian', action='store_true')
     args = parser.parse_args()
 
     main(args.subject, args.session, smoothed=args.smoothed, bids_folder=args.bids_folder, on_response=args.on_response,
-         range_n=args.range)
+         range_n=args.range, gaussian=args.gaussian)

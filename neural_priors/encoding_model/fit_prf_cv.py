@@ -61,10 +61,10 @@ def main(subject, session, smoothed, bids_folder, range_n=None):
     print(data)
     print(paradigm)
 
-    model = LogGaussianPRF()
+    model = LogGaussianPRF(parameterisation='mode_fwhm_natural')
 
-    mus = np.linspace(5, 40, 50, dtype=np.float32)
-    sds = np.linspace(3, 20, 50, dtype=np.float32)
+    modes = np.linspace(5, 40, 30, dtype=np.float32)
+    fwhms = np.linspace(3, 30, 30, dtype=np.float32)
     amplitudes = np.array([1.], dtype=np.float32)
     baselines = np.array([0], dtype=np.float32)
 
@@ -85,7 +85,7 @@ def main(subject, session, smoothed, bids_folder, range_n=None):
         print(train_data)
 
         optimizer = ParameterFitter(model, train_data, train_paradigm)
-        grid_parameters = optimizer.fit_grid(mus, sds, amplitudes, baselines, use_correlation_cost=True)
+        grid_parameters = optimizer.fit_grid(modes, fwhms, amplitudes, baselines, use_correlation_cost=True)
 
         grid_parameters = optimizer.refine_baseline_and_amplitude(grid_parameters, n_iterations=5)
 
