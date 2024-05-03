@@ -11,3 +11,5 @@ export PARTICIPANT_LABEL=$(printf "%02d" $SLURM_ARRAY_TASK_ID)
 
 source activate tf2-gpu
 python $HOME/git/neural_priors/neural_priors/encoding_model/fit_prf_cv.py $PARTICIPANT_LABEL 0 --bids_folder /shares/zne.uzh/gdehol/ds-neuralpriors
+python $HOME/git/neural_priors/neural_priors/encoding_model/fit_prf_cv.py $PARTICIPANT_LABEL 0 --bids_folder /shares/zne.uzh/gdehol/ds-neuralpriors --range wide
+python $HOME/git/neural_priors/neural_priors/encoding_model/fit_prf_cv.py $PARTICIPANT_LABEL 0 --bids_folder /shares/zne.uzh/gdehol/ds-neuralpriors --range narrow

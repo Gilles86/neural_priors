@@ -2,7 +2,7 @@ import os
 import os.path as op
 import argparse
 from neural_priors.utils.data import Subject
-from braincoder.models import LogGaussianPRF
+from braincoder.models import LogGaussianPRF, GaussianPRF
 from braincoder.optimize import ParameterFitter
 import numpy as np
 from braincoder.utils import get_rsq
@@ -10,7 +10,7 @@ from sklearn.model_selection import LeaveOneGroupOut
 import pandas as pd
 from nilearn import image
 
-def main(subject, session, smoothed, bids_folder, range_n=None):
+def main(subject, session, smoothed, bids_folder, range_n=None, gaussian=False):
 
     if session == 0:
         session = None
@@ -18,6 +18,9 @@ def main(subject, session, smoothed, bids_folder, range_n=None):
     assert(range_n in [None, 'wide', 'narrow']), "range_n must be either None, 'wide' or 'narrow'"
 
     key = 'encoding_model.cv.denoise'
+
+    if gaussian:
+        key += '.gaussian'
 
     if smoothed:
         key += '.smoothed'
@@ -142,7 +145,8 @@ if __name__ == '__main__':
     parser.add_argument('--smoothed', action='store_true')
     parser.add_argument('--bids_folder', default='/data/ds-neuralpriors')
     parser.add_argument('--range', default=None)
+    parser.add_argument('--gaussian', action='store_true')
     args = parser.parse_args()
 
     main(args.subject, args.session, smoothed=args.smoothed, bids_folder=args.bids_folder,
-         range_n=args.range)
+         range_n=args.range, gaussian=args.gaussian)
