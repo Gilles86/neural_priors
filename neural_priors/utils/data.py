@@ -139,7 +139,7 @@ class Subject(object):
         return confounds[confound_labels]
 
 
-    def get_single_trial_estimates(self, session, type='stim', smoothed=False):
+    def get_single_trial_estimates(self, session, type='stim', smoothed=False, roi=None):
         
         dir = 'glm_stim1.denoise'
 
@@ -159,6 +159,11 @@ class Subject(object):
 
         n_volumes = 240 if session is not None else 480
         assert(im.shape[3] == n_volumes), f'Expected {n_volumes} volumes, got {im.shape[3]}'
+
+        if roi is not None:
+            mask = self.get_volume_mask(roi=roi, session=session, epi_space=True)
+            masker = NiftiMasker(mask)
+            im = masker.fit_transform(im)
 
         return im
 
