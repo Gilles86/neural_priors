@@ -236,6 +236,7 @@ class Subject(object):
             cross_validated=True,
             keys=None,
             roi=None,
+            range_n=None,
             return_image=False):
 
         dir = 'encoding_model'
@@ -251,10 +252,14 @@ class Subject(object):
         if smoothed:
             dir += '.smoothed'
 
+        if range_n is not None:
+            assert(range_n in ['wide', 'narrow']), f'range must be either "wide" or "narrow"'
+            dir += f'.range_{range_n}'
+
         parameters = []
 
         if keys is None:
-            keys = ['mu', 'sd', 'amplitude', 'baseline', 'r2', 'cvr2']
+            keys = ['mode', 'fwhm', 'amplitude', 'baseline', 'r2', 'cvr2']
 
         mask = self.get_volume_mask(session=session, roi=roi, epi_space=True)
         masker = NiftiMasker(mask)
