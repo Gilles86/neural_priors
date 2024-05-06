@@ -139,7 +139,11 @@ class Subject(object):
         return confounds[confound_labels]
 
 
-    def get_single_trial_estimates(self, session, type='stim', smoothed=False, roi=None):
+    def get_single_trial_estimates(self, session, type='stim', smoothed=False, roi=None,
+                                   zscore_sessions=False):
+
+        if (session is not None) and (zscore_sessions):
+            raise ValueError(f'Cannot zscore across sessions wiht only one session ({session})')
         
         dir = 'glm_stim1.denoise'
 
@@ -153,12 +157,19 @@ class Subject(object):
             dir = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 'func')
             fn = op.join(dir, f'sub-{self.subject_id}_ses-{session}_task-task_space-T1w_desc-{type}_pe.nii.gz')
 
-
-
         im = image.load_img(fn, dtype=np.float32)
 
         n_volumes = 240 if session is not None else 480
         assert(im.shape[3] == n_volumes), f'Expected {n_volumes} volumes, got {im.shape[3]}'
+
+        if zscore_sessions:
+            session1 = image.index_img(im, slice(0, 240))
+            session2= image.index_img(im, slice(240, 480))
+
+            session1 = image.clean_img(session1, detrend=False, standardize='zscore')
+            session2 = image.clean_img(session2, detrend=False, standardize='zscore')
+
+            im = image.concat_imgs([session1, session2])
 
         if roi is not None:
             mask = self.get_volume_mask(roi=roi, session=session, epi_space=True)
