@@ -12,6 +12,18 @@ def get_all_subject_ids():
     with pkg_resources.resource_stream('neural_priors', '/data/subjects.yml') as stream:
         return yaml.safe_load(stream).keys()
 
+def get_all_behavioral_data(bids_folder='/data/ds-neuralpriors'):
+    subjects = get_all_subject_ids()
+
+    df = []
+    for subject in subjects:
+        sub = Subject(subject, bids_folder=bids_folder)
+        df.append(sub.get_behavioral_data(add_info=True))
+
+    df = pd.concat(df)
+
+    return df
+
 class Subject(object):
 
 
@@ -35,7 +47,7 @@ class Subject(object):
             return pd.concat((self.get_behavioral_data(session, tasks, raw, add_info) for session in self.get_sessions()), keys=self.get_sessions(), names=['session'])
 
         if tasks is None:
-            tasks = ['feedback', 'estimation_task']
+            tasks = ['estimation_task']
 
         behavior_folder = op.join(self.bids_folder, 'sourcedata', 'behavior', f'sub-{self.subject_id}', f'ses-{session}', )
 
@@ -269,7 +281,7 @@ class Subject(object):
             dir += '.smoothed'
 
         if range_n is not None:
-            assert(range_n in ['wide', 'narrow']), f'range must be either "wide" or "narrow"'
+            assert(range_n in ['wide', 'narrow', 'wide2']), f'range must be either "wide", "narrow", or "wide2"'
             dir += f'.range_{range_n}'
 
         parameters = []
@@ -284,7 +296,7 @@ class Subject(object):
             if session is None:
                 raise ValueError('Session must be given for cross-validated data')
             fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func',
-                                    f'sub-{self.subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
+                                    'sub-{subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
         else:
             if session is None:
                 fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
@@ -300,10 +312,13 @@ class Subject(object):
             else:
                 fn = fn_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id)
             
+            if not hasattr(masker, "mask_img_"):
+                masker.fit(fn)
+
             pars = pd.Series(apply_mask(fn, mask, ensure_finite=False))
             parameters.append(pars)
 
-        parameters =  pd.concat(parameters, axis=1, keys=keys, names=['parameter'])
+        parameters =  pd.concat(parameters, axis=1, keys=keys, names=['parameter']).astype(np.float32)
 
         if return_image:
             return masker.inverse_transform(parameters.T)
@@ -317,9 +332,9 @@ class Subject(object):
 
             fs_hemi = {'L':'lh', 'R':'rh'}[hemi]
 
-            info[hemi]['inner'] = op.join(self.bids_folder, 'derivatives', 'fmriprep', f'sub-{self.subject_id}', 'ses-1', 'anat', f'sub-{self.subject_id}_ses-1_hemi-{hemi}_white.surf.gii')
-            info[hemi]['mid'] = op.join(self.bids_folder, 'derivatives', 'fmriprep', f'sub-{self.subject_id}', 'ses-1', 'anat', f'sub-{self.subject_id}_ses-1_hemi-{hemi}_thickness.shape.gii')
-            info[hemi]['outer'] = op.join(self.bids_folder, 'derivatives', 'fmriprep', f'sub-{self.subject_id}', 'ses-1', 'anat', f'sub-{self.subject_id}_ses-1_hemi-{hemi}_pial.surf.gii')
+            info[hemi]['inner'] = op.join(self.bids_folder, 'derivatives', 'fmriprep', f'sub-{self.subject_id}', 'anat', f'sub-{self.subject_id}_hemi-{hemi}_white.surf.gii')
+            info[hemi]['mid'] = op.join(self.bids_folder, 'derivatives', 'fmriprep', f'sub-{self.subject_id}', 'anat', f'sub-{self.subject_id}_hemi-{hemi}_thickness.shape.gii')
+            info[hemi]['outer'] = op.join(self.bids_folder, 'derivatives', 'fmriprep', f'sub-{self.subject_id}', 'anat', f'sub-{self.subject_id}_hemi-{hemi}_pial.surf.gii')
             # info[hemi]['inflated'] = op.join(self.bids_folder, 'derivatives', 'fmriprep', f'sub-{self.subject_id}', 'ses-1', 'anat', f'sub-{self.subject_id}_ses-1_hemi-{hemi}_inflated.surf.gii')
             info[hemi]['curvature'] = op.join(self.bids_folder, 'derivatives', 'fmriprep', 'sourcedata', 'freesurfer', f'sub-{self.subject_id}', 'surf', f'{fs_hemi}.curv')
 
@@ -328,23 +343,30 @@ class Subject(object):
 
         return info
 
-    def get_prf_parameters_surf(self, session, run=None, smoothed=False, cross_validated=False, hemi=None, mask=None, space='fsnative', parameters=None, key=None, nilearn=True):
+    def get_prf_parameters_surf(self, session, run=None, smoothed=False, cross_validated=False, hemi=None,
+                                mask=None, space='fsnative', parameters=None, key=None, nilearn=True,
+                                range_n=None):
+
+        if nilearn is False:
+            raise NotImplementedError
 
         if mask is not None:
             raise NotImplementedError
 
         if parameters is None:
-            parameter_keys = ['mu', 'sd', 'cvr2', 'r2']
+            parameter_keys = ['mode', 'fwhm', 'amplitude', 'cvr2', 'r2']
         else:
             parameter_keys = parameters
 
         if hemi is None:
             prf_l = self.get_prf_parameters_surf(session, 
                     run, smoothed, cross_validated, hemi='L',
-                    mask=mask, space=space, key=key, parameters=parameters, nilearn=nilearn)
+                    mask=mask, space=space, key=key, parameters=parameters, nilearn=nilearn,
+                    range_n=range_n)
             prf_r = self.get_prf_parameters_surf(session, 
                     run, smoothed, cross_validated, hemi='R',
-                    mask=mask, space=space, key=key, parameters=parameters, nilearn=nilearn)
+                    mask=mask, space=space, key=key, parameters=parameters, nilearn=nilearn,
+                    range_n=range_n)
             
             return pd.concat((prf_l, prf_r), axis=0, 
                     keys=pd.Index(['L', 'R'], name='hemi'))
@@ -352,30 +374,37 @@ class Subject(object):
 
         if key is None:
             if cross_validated:
-                dir = 'encoding_model.cv.denoise'
+                key = 'encoding_model.cv.denoise'
             else:
-                dir = 'encoding_model.denoise'
+                key = 'encoding_model.denoise'
 
             if smoothed:
-                dir += '.smoothed'
+                key += '.smoothed'
+
+        if range_n is not None:
+            key += f'.range_{range_n}'
 
         parameters = []
 
-        for parameter_key in parameter_keys:
-            if cross_validated:
-                if nilearn:
-                    fn = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 
-                            'func', f'sub-{self.subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
-                else:
-                    fn = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 
-                            'func', f'sub-{self.subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.volume.optim_space-{space}_hemi-{hemi}.func.gii')
+        if session is None:
+            dir = op.join(self.bids_folder, 'derivatives', key, f'sub-{self.subject_id}', 'func')
+
+            if run is not None:
+                fn_template = op.join(dir, 'sub-{subject_id}_run-{run}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
             else:
-                if nilearn:
-                    fn = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 
-                            'func', f'sub-{self.subject_id}_ses-{session}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
-                else:
-                    fn = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 
-                            'func', f'sub-{self.subject_id}_ses-{session}_desc-{parameter_key}.volume.optim_space-{space}_hemi-{hemi}.func.gii')
+                fn_template = op.join(dir, 'sub-{subject_id}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
+
+        else:
+            dir = op.join(self.bids_folder, 'derivatives', key, f'sub-{self.subject_id}', f'ses-{session}', 'func')
+
+            if run is not None:
+                fn_template = op.join(dir, 'sub-{subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
+            else:
+                fn_template = op.join(dir, 'sub-{subject_id}_ses-{session}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
+
+        for parameter_key in parameter_keys:
+
+            fn = fn_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id, hemi=hemi, space=space)
 
             pars = pd.Series(surface.load_surf_data(fn))
             pars.index.name = 'vertex'
