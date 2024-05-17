@@ -7,12 +7,13 @@ from nilearn import surface
 import numpy as np
 from utils import get_alpha_vertex
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from neural_priors.utils.data import Subject
 
 
 def main(subject, bids_folder, use_cvr2=True, threshold=None, filter_extreme_prfs=True, smoothed=False, fsnative=False,
-         vmin=5, vmax=40, show_colorbar=False):
+         vmin=5, vmax=25, show_colorbar=False):
 
     print(use_cvr2, threshold)
 
@@ -32,31 +33,44 @@ def main(subject, bids_folder, use_cvr2=True, threshold=None, filter_extreme_prf
     elif not use_cvr2 and (threshold is None):
         threshold = 0.05
     
-    for session in [1]:
-        prf_pars = sub.get_prf_parameters_surf(session, None,  smoothed=smoothed, nilearn=True, space=space)
-        print(prf_pars.head())
-        print(prf_pars.describe())
+    # for session in [1]:
+    keys = ['both', 'wide', 'narrow']
+    keys_ = [None, 'wide', 'narrow']
 
-        if use_cvr2:
-            mask = (prf_pars['cvr2']  > threshold).values
-        else:
-            mask = (prf_pars['r2']  > threshold).values
+    prf_pars = []
 
-        if filter_extreme_prfs:
-            print("Filtering extreme prfs")
-            mask = mask & (prf_pars['mu'] > vmin).values & (prf_pars['mu'] < vmax).values
+    for key, key_ in zip(keys, keys_):
+        prf_pars.append(sub.get_prf_parameters_surf(session=None, run=None,  smoothed=smoothed, nilearn=True, space=space,
+                                               range_n=key_))
 
-        mu_vertex = get_alpha_vertex(prf_pars['mu'].values, mask, vmin=vmin, vmax=vmax, subject=fs_subject) 
-        sd_vertex = get_alpha_vertex(prf_pars['sd'].values, mask, vmin=5, vmax=20, subject=fs_subject) 
-        r2_vertex = get_alpha_vertex(prf_pars['r2'].values, mask, cmap='hot', vmin=threshold, vmax=0.15, subject=fs_subject)
-        cvr2_vertex = get_alpha_vertex(prf_pars['cvr2'].values, mask, cmap='hot', vmin=0.0, vmax=0.15, subject=fs_subject)
+    prf_pars = pd.concat(prf_pars, axis=1, keys=keys)
+    print(prf_pars.columns)
 
-        vertices[f"mu_vertex_session_{session}"] = mu_vertex
-        vertices[f"sd_vertex_session_{session}"] = sd_vertex
-        vertices[f"r2_vertex_session_{session}"] = r2_vertex
-        vertices[f"cvr2_vertex_session_{session}"] = cvr2_vertex
+
+
+    if use_cvr2:
+        mask = (prf_pars[[('wide', 'cvr2'), ('narrow', 'cvr2')]] > threshold).any(axis=1).values
+    else:
+        mask = (prf_pars[('both', 'r2')] > threshold).values
+
+    if filter_extreme_prfs:
+        # mask = mask & (prf_pars['both', 'mode'] > vmin).values & (prf_pars['both', 'mode'] < vmax).values
+        mask = mask
+
+    for key in keys:
+        # if use_cvr2:
+        #     mask = (prf_pars[(key, 'cvr2')] > threshold).values
+        # else:
+        #     mask = (prf_pars[(key, 'r2')] > threshold).values
+
+        vertices[f'mode_range-{key}'] = get_alpha_vertex(prf_pars[(key, 'mode')].values, mask, vmin=vmin, vmax=vmax, subject=fs_subject) 
+        vertices[f'fwhm_range-{key}'] = get_alpha_vertex(prf_pars[(key, 'fwhm')].values, mask, vmin=5, vmax=40, subject=fs_subject) 
+        vertices[f'amplitude_range-{key}'] = get_alpha_vertex(prf_pars[(key, 'amplitude')].values, mask, vmin=0, vmax=5, cmap='viridis', subject=fs_subject) 
+        vertices[f'r2_range-{key}'] = get_alpha_vertex(prf_pars[(key, 'r2')].values, mask, cmap='hot', vmin=threshold, vmax=0.15, subject=fs_subject)
+        vertices[f'cvr2_range-{key}'] = get_alpha_vertex(prf_pars[(key, 'cvr2')].values, mask, cmap='hot', vmin=0.0, vmax=0.15, subject=fs_subject)
 
     vertices = {k: v for k, v in sorted(vertices.items(), key=lambda item: item[0])}
+    print(vertices)
     webgl.show(vertices)
 
     if show_colorbar:

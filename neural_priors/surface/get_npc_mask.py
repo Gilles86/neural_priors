@@ -49,8 +49,8 @@ def main(subject, bids_folder, roi='npc1'):
 
     target_fn = op.join(target_dir, f'sub-{subject}_space-T1w_desc-{roi}_mask.nii.gz')
     sub = fs_subject(op.join(bids_folder, 'derivatives', 'fmriprep', 'sourcedata', 'freesurfer', f'sub-{subject}'))
-    im = load(op.join(bids_folder, 'derivatives', 'fmriprep', f'sub-{subject}', 'ses-1', 'anat', f'sub-{subject}_ses-1_desc-preproc_T1w.nii.gz'))
-    im = to_image(image_clear(im, fill=0.0), dtype=int)
+    im = load(op.join(bids_folder, 'derivatives', 'fmriprep', f'sub-{subject}', 'anat', f'sub-{subject}_desc-preproc_T1w.nii.gz'))
+    im = to_image(image_clear(im, fill=0.0), dtype=np.int32)
 
     print('Generating volume...')
     new_im = sub.cortex_to_image(tuple(mask_data),
