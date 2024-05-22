@@ -7,6 +7,7 @@ from nilearn.maskers import NiftiMasker
 from nilearn.masking import apply_mask
 import pkg_resources
 import yaml
+from braincoder.models import LogGaussianPRF
 
 def get_all_subject_ids():
     with pkg_resources.resource_stream('neural_priors', '/data/subjects.yml') as stream:
@@ -436,3 +437,22 @@ class Subject(object):
                 raise ValueError(f'{t1w} does not exist')
 
             return image.load_img(t1w)
+
+
+    def get_prf_predictions(self, session, smoothed=False, roi=None, range_n=None, return_image=False,
+                            include_n=True):
+
+        prf_pars = self.get_prf_parameters_volume(session, cross_validated=False, smoothed=smoothed, roi=roi, range_n=range_n,
+                                                return_image=False)
+
+        paradigm = self.get_behavioral_data()['n']
+
+        model = LogGaussianPRF(paradigm=paradigm, parameters=prf_pars,
+                            parameterisation='mode_fwhm_natural')
+
+        predictions = model.predict(paradigm)
+
+        if include_n:
+            predictions.set_index(paradigm, append=True, inplace=True)
+
+        return predictions
