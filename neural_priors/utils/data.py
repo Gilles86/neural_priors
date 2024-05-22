@@ -44,7 +44,14 @@ class Subject(object):
     def get_behavioral_data(self, session=None, tasks=None, raw=False, add_info=True):
 
         if session is None:
-            return pd.concat((self.get_behavioral_data(session, tasks, raw, add_info) for session in self.get_sessions()), keys=self.get_sessions(), names=['session'])
+            data = pd.concat((self.get_behavioral_data(session, tasks, raw, add_info) for session in self.get_sessions()), keys=self.get_sessions(), names=['session'])
+
+            if tasks is None:
+                data = data.reorder_levels(['subject', 'session', 'run', 'trial_nr']).sort_index()
+            else:
+                data = data.reorder_levels(['subject', 'session', 'task', 'run', 'trial_nr']).sort_index()
+
+            return data
 
         if tasks is None:
             tasks = ['estimation_task']
@@ -78,6 +85,8 @@ class Subject(object):
                     print(f'Problem with {task} run {run}: {e}')
 
         df = pd.concat(df, keys=keys, names=['subject', 'task', 'run']).set_index('event_type', append=True)
+        df = df.droplevel(-2)
+        df = df.set_index('trial_nr', append=True)
 
         if raw:
             if add_info:
@@ -85,6 +94,9 @@ class Subject(object):
             return df
 
         df = df.xs('feedback', level='event_type')
+
+        if len(df.index.unique(level='task')) == 1:
+            df = df.droplevel('task')
 
         df['response'] = df['response'].astype(float)
         df['n'] = df['n'].astype(float)
