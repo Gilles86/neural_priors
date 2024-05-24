@@ -10,12 +10,12 @@ from sklearn.model_selection import LeaveOneGroupOut
 import pandas as pd
 from nilearn import image
 
-def main(subject, session, smoothed, bids_folder, range_n=None, gaussian=False):
+def main(subject, session, smoothed, bids_folder, range_n=None, gaussian=False, save_runwise_estimates=False):
 
     if session == 0:
         session = None
 
-    assert(range_n in [None, 'wide', 'narrow']), "range_n must be either None, 'wide' or 'narrow'"
+    assert(range_n in [None, 'wide', 'narrow', 'wide2']), "range_n must be either None, 'wide', 'narrow', or 'wide2"
 
     key = 'encoding_model.cv.denoise'
 
@@ -48,7 +48,10 @@ def main(subject, session, smoothed, bids_folder, range_n=None, gaussian=False):
     paradigm = behavior['n']
 
     if range_n is not None:
-        range_mask = behavior['range'] == range_n
+        if range_n == 'wide2':
+            range_mask = (behavior['range'] == 'wide') & (behavior['n'] < 26.)
+        else:
+            range_mask = behavior['range'] == range_n
 
     if range_n is not None:
         data = image.index_img(data, range_mask)
@@ -64,12 +67,19 @@ def main(subject, session, smoothed, bids_folder, range_n=None, gaussian=False):
     print(data)
     print(paradigm)
 
-    model = LogGaussianPRF(parameterisation='mode_fwhm_natural')
+    if gaussian:
+        model = GaussianPRF()
+    else:
+        model = LogGaussianPRF(parameterisation='mode_fwhm_natural')
 
-    modes = np.linspace(5, 40, 30, dtype=np.float32)
-    fwhms = np.linspace(3, 30, 30, dtype=np.float32)
+    modes = np.linspace(1, 50, 100, dtype=np.float32)
+    fwhms = np.linspace(1, 60, 100, dtype=np.float32)
     amplitudes = np.array([1.], dtype=np.float32)
     baselines = np.array([0], dtype=np.float32)
+
+
+    if gaussian:
+        sigmas = fwhms / 2.355
 
     # runs = paradigm.index.unique(level='run')
     cv_r2s = []
@@ -88,21 +98,25 @@ def main(subject, session, smoothed, bids_folder, range_n=None, gaussian=False):
         print(train_data)
 
         optimizer = ParameterFitter(model, train_data, train_paradigm)
-        grid_parameters = optimizer.fit_grid(modes, fwhms, amplitudes, baselines, use_correlation_cost=True)
+        
+        if gaussian:
+            grid_parameters = optimizer.fit_grid(modes, sigmas, amplitudes, baselines, use_correlation_cost=True)
+        else:
+            grid_parameters = optimizer.fit_grid(modes, fwhms, amplitudes, baselines, use_correlation_cost=True)
 
-        grid_parameters = optimizer.refine_baseline_and_amplitude(grid_parameters, n_iterations=5)
+        # grid_parameters = optimizer.refine_baseline_and_amplitude(grid_parameters, n_iterations=5)
 
-        optimizer.fit(init_pars=grid_parameters, learning_rate=.05, store_intermediate_parameters=False, max_n_iterations=10000,
-            fixed_pars=['mu', 'sd'],
-            r2_atol=0.0001)
+        if gaussian:
+            optimizer.fit(init_pars=grid_parameters, learning_rate=.05, store_intermediate_parameters=False, max_n_iterations=10000,
+                fixed_pars=['mu', 'sd'],
+                r2_atol=0.0001)
+        else:
+            optimizer.fit(init_pars=grid_parameters, learning_rate=.05, store_intermediate_parameters=False, max_n_iterations=10000,
+                fixed_pars=['mode', 'fwhm'],
+                r2_atol=0.0001)
 
         target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par='r2', optimizer='grid')
         masker.inverse_transform(optimizer.r2).to_filename(target_fn)
-
-        for par, values in optimizer.estimated_parameters.T.iterrows():
-            print(values)
-            target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par=par, optimizer='grid')
-            masker.inverse_transform(values).to_filename(target_fn)
 
         optimizer.fit(init_pars=optimizer.estimated_parameters, learning_rate=.005, store_intermediate_parameters=False, max_n_iterations=10000,
             r2_atol=0.0001, min_n_iterations=1000)
@@ -111,10 +125,11 @@ def main(subject, session, smoothed, bids_folder, range_n=None, gaussian=False):
         target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par='r2', optimizer='optim')
         masker.inverse_transform(optimizer.r2).to_filename(target_fn)
 
-        for par, values in optimizer.estimated_parameters.T.iterrows():
-            print(values)
-            target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par=par, optimizer='optim')
-            masker.inverse_transform(values).to_filename(target_fn)
+        if save_runwise_estimates:
+            for par, values in optimizer.estimated_parameters.T.iterrows(): 
+                print(values)
+                target_fn = fn_template.format(subject=subject, session=test_session, run=test_run, par=par, optimizer='optim')
+                masker.inverse_transform(values).to_filename(target_fn)
 
         cv_r2 = get_rsq(test_data, model.predict(paradigm=test_paradigm, parameters=optimizer.estimated_parameters))
 
@@ -134,8 +149,6 @@ def main(subject, session, smoothed, bids_folder, range_n=None, gaussian=False):
         target_fn = fn_template.replace('_run-{run}_', '_').format(subject=subject, session=session, par='cvr2', optimizer='optim')
 
     masker.inverse_transform(cv_r2).to_filename(target_fn)
-
-
         
 
 if __name__ == '__main__':
