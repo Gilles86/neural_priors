@@ -7,14 +7,14 @@ from nilearn.maskers import NiftiMasker
 from nilearn.masking import apply_mask
 import pkg_resources
 import yaml
-from braincoder.models import LogGaussianPRF
+from braincoder.models import LogGaussianPRF, GaussianPRF
 
 def get_all_subject_ids():
     with pkg_resources.resource_stream('neural_priors', '/data/subjects.yml') as stream:
         return yaml.safe_load(stream).keys()
 
-def get_all_behavioral_data(bids_folder='/data/ds-neuralpriors'):
-    subjects = get_all_subject_ids()
+def get_all_behavioral_data(bids_folder='/data/ds-neuralpriors', subjects=None):
+    subjects = get_all_subject_ids() if subjects is None else subjects
 
     df = []
     for subject in subjects:
@@ -278,7 +278,8 @@ class Subject(object):
             keys=None,
             roi=None,
             range_n=None,
-            return_image=False):
+            return_image=False,
+            gaussian=False):
 
         dir = 'encoding_model'
 
@@ -290,6 +291,9 @@ class Subject(object):
 
         dir += '.denoise'
 
+        if gaussian:
+            dir += '.gaussian'
+
         if smoothed:
             dir += '.smoothed'
 
@@ -300,7 +304,10 @@ class Subject(object):
         parameters = []
 
         if keys is None:
-            keys = ['mode', 'fwhm', 'amplitude', 'baseline', 'r2', 'cvr2']
+            if gaussian:
+                keys = ['mu', 'sd', 'amplitude', 'baseline', 'r2', 'cvr2']
+            else:
+                keys = ['mode', 'fwhm', 'amplitude', 'baseline', 'r2', 'cvr2']
 
         mask = self.get_volume_mask(session=session, roi=roi, epi_space=True)
         masker = NiftiMasker(mask)
@@ -438,16 +445,18 @@ class Subject(object):
 
             return image.load_img(t1w)
 
-
     def get_prf_predictions(self, session, smoothed=False, roi=None, range_n=None, return_image=False,
-                            include_n=True):
+                            include_n=True, gaussian=False):
 
         prf_pars = self.get_prf_parameters_volume(session, cross_validated=False, smoothed=smoothed, roi=roi, range_n=range_n,
-                                                return_image=False)
+                                                return_image=False, gaussian=gaussian)
 
         paradigm = self.get_behavioral_data()['n']
 
-        model = LogGaussianPRF(paradigm=paradigm, parameters=prf_pars,
+        if gaussian:
+            model = GaussianPRF(paradigm=paradigm, parameters=prf_pars)
+        else:
+            model = LogGaussianPRF(paradigm=paradigm, parameters=prf_pars,
                             parameterisation='mode_fwhm_natural')
 
         predictions = model.predict(paradigm)

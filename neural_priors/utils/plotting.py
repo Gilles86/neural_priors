@@ -6,7 +6,8 @@ import pandas as pd
 def plot_prf_predictions(subject, voxels=None, session=None, smoothed=True, roi='NPCr', range_n='both',
                          bids_folder='/data/ds-neuralpriors', n_voxels=None, col_wrap=4,
                          bins=None,
-                         sharey=False):
+                         sharey=False,
+                         gaussian=False):
 
     if (type(subject) is str) or (type(subject) is int):
         subject = Subject(subject, bids_folder)
@@ -16,7 +17,7 @@ def plot_prf_predictions(subject, voxels=None, session=None, smoothed=True, roi=
     else:
         ranges = [range_n]
     
-    pred = [subject.get_prf_predictions(session, smoothed=smoothed, roi=roi, range_n=range_n, return_image=False)
+    pred = [subject.get_prf_predictions(session, smoothed=smoothed, roi=roi, range_n=range_n, return_image=False, gaussian=gaussian)
             for range_n in ranges]
     pred = pd.concat(pred, keys=ranges, names=['range'])
 
