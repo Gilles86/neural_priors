@@ -7,13 +7,22 @@ from nilearn.maskers import NiftiMasker
 from nilearn.masking import apply_mask
 import pkg_resources
 import yaml
+from braincoder.models import LogGaussianPRF, GaussianPRF
 
-def get_all_subject_ids():
+def get_all_subject_ids(only_full=True):
     with pkg_resources.resource_stream('neural_priors', '/data/subjects.yml') as stream:
-        return yaml.safe_load(stream).keys()
+        mapping = yaml.safe_load(stream)
 
-def get_all_behavioral_data(bids_folder='/data/ds-neuralpriors'):
-    subjects = get_all_subject_ids()
+        subjects = []
+
+        for key in mapping.keys():
+            if len(mapping[key]) > 1:
+                subjects.append(key)
+        
+        return subjects
+
+def get_all_behavioral_data(bids_folder='/data/ds-neuralpriors', subjects=None):
+    subjects = get_all_subject_ids() if subjects is None else subjects
 
     df = []
     for subject in subjects:
@@ -44,7 +53,14 @@ class Subject(object):
     def get_behavioral_data(self, session=None, tasks=None, raw=False, add_info=True):
 
         if session is None:
-            return pd.concat((self.get_behavioral_data(session, tasks, raw, add_info) for session in self.get_sessions()), keys=self.get_sessions(), names=['session'])
+            data = pd.concat((self.get_behavioral_data(session, tasks, raw, add_info) for session in self.get_sessions()), keys=self.get_sessions(), names=['session'])
+
+            if tasks is None:
+                data = data.reorder_levels(['subject', 'session', 'run', 'trial_nr']).sort_index()
+            else:
+                data = data.reorder_levels(['subject', 'session', 'task', 'run', 'trial_nr']).sort_index()
+
+            return data
 
         if tasks is None:
             tasks = ['estimation_task']
@@ -78,6 +94,8 @@ class Subject(object):
                     print(f'Problem with {task} run {run}: {e}')
 
         df = pd.concat(df, keys=keys, names=['subject', 'task', 'run']).set_index('event_type', append=True)
+        df = df.droplevel(-2)
+        df = df.set_index('trial_nr', append=True)
 
         if raw:
             if add_info:
@@ -85,6 +103,9 @@ class Subject(object):
             return df
 
         df = df.xs('feedback', level='event_type')
+
+        if len(df.index.unique(level='task')) == 1:
+            df = df.droplevel('task')
 
         df['response'] = df['response'].astype(float)
         df['n'] = df['n'].astype(float)
@@ -265,7 +286,8 @@ class Subject(object):
             keys=None,
             roi=None,
             range_n=None,
-            return_image=False):
+            return_image=False,
+            gaussian=False):
 
         dir = 'encoding_model'
 
@@ -277,6 +299,9 @@ class Subject(object):
 
         dir += '.denoise'
 
+        if gaussian:
+            dir += '.gaussian'
+
         if smoothed:
             dir += '.smoothed'
 
@@ -287,7 +312,10 @@ class Subject(object):
         parameters = []
 
         if keys is None:
-            keys = ['mode', 'fwhm', 'amplitude', 'baseline', 'r2', 'cvr2']
+            if gaussian:
+                keys = ['mu', 'sd', 'amplitude', 'baseline', 'r2', 'cvr2']
+            else:
+                keys = ['mode', 'fwhm', 'amplitude', 'baseline', 'r2', 'cvr2']
 
         mask = self.get_volume_mask(session=session, roi=roi, epi_space=True)
         masker = NiftiMasker(mask)
@@ -424,3 +452,24 @@ class Subject(object):
                 raise ValueError(f'{t1w} does not exist')
 
             return image.load_img(t1w)
+
+    def get_prf_predictions(self, session, smoothed=False, roi=None, range_n=None, return_image=False,
+                            include_n=True, gaussian=False):
+
+        prf_pars = self.get_prf_parameters_volume(session, cross_validated=False, smoothed=smoothed, roi=roi, range_n=range_n,
+                                                return_image=False, gaussian=gaussian)
+
+        paradigm = self.get_behavioral_data()['n']
+
+        if gaussian:
+            model = GaussianPRF(paradigm=paradigm, parameters=prf_pars)
+        else:
+            model = LogGaussianPRF(paradigm=paradigm, parameters=prf_pars,
+                            parameterisation='mode_fwhm_natural')
+
+        predictions = model.predict(paradigm)
+
+        if include_n:
+            predictions.set_index(paradigm, append=True, inplace=True)
+
+        return predictions
