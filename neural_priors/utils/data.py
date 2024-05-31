@@ -95,7 +95,6 @@ class Subject(object):
 
         df = pd.concat(df, keys=keys, names=['subject', 'task', 'run']).set_index('event_type', append=True)
         df = df.droplevel(-2)
-        df = df.set_index('trial_nr', append=True)
 
         if raw:
             if add_info:
@@ -289,7 +288,11 @@ class Subject(object):
             roi=None,
             range_n=None,
             return_image=False,
-            gaussian=False):
+            gaussian=False,
+            wprf=False):
+
+        if gaussian and wprf:
+            raise ValueError('Cannot have both gaussian and wprf')
 
         dir = 'encoding_model'
 
@@ -300,6 +303,9 @@ class Subject(object):
             dir += '.cv'
 
         dir += '.denoise'
+
+        if wprf:
+            dir += '.wprf'
 
         if gaussian:
             dir += '.gaussian'
@@ -314,7 +320,9 @@ class Subject(object):
         parameters = []
 
         if keys is None:
-            if gaussian:
+            if wprf:
+                keys= ['cvr2']
+            elif gaussian:
                 keys = ['mu', 'sd', 'amplitude', 'baseline', 'r2', 'cvr2']
             else:
                 keys = ['mode', 'fwhm', 'amplitude', 'baseline', 'r2', 'cvr2']
