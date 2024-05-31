@@ -1,5 +1,5 @@
 window:
-  size: [1500, 1500]
+  size: [1200, 1200]
   pos: [0, 0]
   color: [0, 0, 0]
   fullscr: False
@@ -9,8 +9,8 @@ window:
 
 monitor:
   name: default
-  width: 42
-  distance: 125  # in cm
+  width: 30
+  distance: 50  # in cm
   gamma: 1
 
 mri:
