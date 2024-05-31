@@ -16,3 +16,6 @@ notebooks/test_get_data.ipynb
 notebooks/test_lognormal_prf.ipynb
 notebooks/test_prf_pars.ipynb
 notebooks/test_subject_7.ipynb
+notebooks/analyze_data.ipynb
+notebooks/plot_predictions_examples.ipynb
+notebooks/test_prf_pars.ipynb
