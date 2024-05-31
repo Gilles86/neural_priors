@@ -3,3 +3,16 @@ experiment/logs/*
 __pycache__/
 
 neural_priors.egg-info
+notebooks/analyze_data.ipynb
+notebooks/check_single_trials.ipynb
+notebooks/decode.ipynb
+notebooks/fix_gauss_fitter.ipynb
+notebooks/get_predictions.ipynb
+notebooks/lognormal_pdf.ipynb
+notebooks/mriqc.ipynb
+notebooks/plot_predictions_examples.ipynb
+notebooks/reorient_parrecs.ipynb
+notebooks/test_get_data.ipynb
+notebooks/test_lognormal_prf.ipynb
+notebooks/test_prf_pars.ipynb
+notebooks/test_subject_7.ipynb
