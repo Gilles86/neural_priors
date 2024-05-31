@@ -102,6 +102,8 @@ class Subject(object):
                 raise ValueError('add_info is not implemented for raw data')
             return df
 
+        df = df.set_index('trial_nr', append=True)
+
         df = df.xs('feedback', level='event_type')
 
         if len(df.index.unique(level='task')) == 1:
