@@ -13,7 +13,7 @@ def main(subject, session, bids_folder):
     onset0 = d.groupby('run').apply(lambda x: x.xs('trigger_2', 0, 'event_type')['onset'])
     d['onset'] -= onset0.loc[d.index.get_level_values('run')].values
     d['trial_nr'] = (d.index.get_level_values('run') - 1) * 30 + d['trial_nr']
-    d = d.set_index('trial_nr', append=True).droplevel(1) 
+    d = d.set_index('trial_nr', append=True) 
 
     d = d[d['onset'] > 0.0]
 
