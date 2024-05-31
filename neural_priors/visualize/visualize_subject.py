@@ -13,7 +13,7 @@ from neural_priors.utils.data import Subject
 
 
 def main(subject, bids_folder, use_cvr2=True, threshold=None, filter_extreme_prfs=True, smoothed=False, fsnative=False,
-         vmin=5, vmax=25, show_colorbar=False):
+         vmin=1, vmax=40, show_colorbar=False):
 
     print(use_cvr2, threshold)
 
@@ -49,25 +49,25 @@ def main(subject, bids_folder, use_cvr2=True, threshold=None, filter_extreme_prf
 
 
     if use_cvr2:
-        mask = (prf_pars[[('wide', 'cvr2'), ('narrow', 'cvr2')]] > threshold).any(axis=1).values
+        mask1 = (prf_pars[[('wide', 'cvr2'), ('narrow', 'cvr2')]] > threshold).any(axis=1).values
     else:
-        mask = (prf_pars[('both', 'r2')] > threshold).values
+        mask1 = (prf_pars[('both', 'r2')] > threshold).values
 
     if filter_extreme_prfs:
-        # mask = mask & (prf_pars['both', 'mode'] > vmin).values & (prf_pars['both', 'mode'] < vmax).values
-        mask = mask
+        pass
 
     for key in keys:
-        # if use_cvr2:
-        #     mask = (prf_pars[(key, 'cvr2')] > threshold).values
-        # else:
-        #     mask = (prf_pars[(key, 'r2')] > threshold).values
+        if use_cvr2:
+            mask2 = (prf_pars[(key, 'cvr2')] > threshold).values
+        else:
+            mask2 = (prf_pars[(key, 'r2')] > threshold).values
 
-        vertices[f'mode_range-{key}'] = get_alpha_vertex(prf_pars[(key, 'mode')].values, mask, vmin=vmin, vmax=vmax, subject=fs_subject) 
-        vertices[f'fwhm_range-{key}'] = get_alpha_vertex(prf_pars[(key, 'fwhm')].values, mask, vmin=5, vmax=40, subject=fs_subject) 
-        vertices[f'amplitude_range-{key}'] = get_alpha_vertex(prf_pars[(key, 'amplitude')].values, mask, vmin=0, vmax=5, cmap='viridis', subject=fs_subject) 
-        vertices[f'r2_range-{key}'] = get_alpha_vertex(prf_pars[(key, 'r2')].values, mask, cmap='hot', vmin=threshold, vmax=0.15, subject=fs_subject)
-        vertices[f'cvr2_range-{key}'] = get_alpha_vertex(prf_pars[(key, 'cvr2')].values, mask, cmap='hot', vmin=0.0, vmax=0.15, subject=fs_subject)
+        for label, mask in enumerate([mask1, mask2]):
+            vertices[f'mode_range-{key}.{label+1}'] = get_alpha_vertex(prf_pars[(key, 'mode')].values, mask, vmin=vmin, vmax=vmax, subject=fs_subject) 
+            vertices[f'fwhm_range-{key}.{label+1}'] = get_alpha_vertex(prf_pars[(key, 'fwhm')].values, mask, vmin=1, vmax=50, subject=fs_subject) 
+            vertices[f'amplitude_range-{key}.{label+1}'] = get_alpha_vertex(prf_pars[(key, 'amplitude')].values, mask, vmin=0, vmax=5, cmap='viridis', subject=fs_subject) 
+            vertices[f'r2_range-{key}.{label+1}'] = get_alpha_vertex(prf_pars[(key, 'r2')].values, mask, cmap='hot', vmin=threshold, vmax=0.15, subject=fs_subject)
+            vertices[f'cvr2_range-{key}.{label+1}'] = get_alpha_vertex(prf_pars[(key, 'cvr2')].values, mask, cmap='hot', vmin=0.0, vmax=0.15, subject=fs_subject)
 
     vertices = {k: v for k, v in sorted(vertices.items(), key=lambda item: item[0])}
     print(vertices)
