@@ -43,8 +43,8 @@ def fit_model(model, paradigm, data, model_label, max_n_iterations=1000):
         amplitudes = np.array([1.], dtype=np.float32)
         baselines = np.array([0], dtype=np.float32)
     elif model_label in [1, 2]:
-        modes = np.linspace(5, 45, 15, dtype=np.float32)
-        sigmas = np.linspace(1, 30, 15, dtype=np.float32)
+        modes = np.linspace(5, 45, 13, dtype=np.float32)
+        sigmas = np.linspace(1, 30, 13, dtype=np.float32)
         amplitudes = np.array([1.], dtype=np.float32)
         baselines = np.array([0], dtype=np.float32)
     
