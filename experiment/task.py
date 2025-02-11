@@ -68,6 +68,10 @@ class TaskTrial(Trial):
 
     def get_events(self):
 
+        events = super().get_events()
+
+        buttons = self.session.settings['']
+
         response_slider = self.session.response_slider
 
         if self.phase == (self.response_phase - 1):
@@ -117,7 +121,7 @@ class TaskTrial(Trial):
         if self.phase == 0:
             self.session.fixation_lines.setColor((-1, .5, -1), fixation_cross_only=True)
         elif self.phase == 1:
-            self.session.fixation_lines.setColor((1, -1, -1), fixation_cross_only=True)
+            self.session.fixation_line.setColor((1, -1, -1), fixation_cross_only=True)
         elif self.phase in self.stimulus_phase:
 
             if self.stimulus_series:

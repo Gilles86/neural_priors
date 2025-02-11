@@ -34,10 +34,6 @@ def _sample_dot_positions(n=10, circle_radius=20, dot_radius=1, min_ecc=0.2, max
 class RadialStimArray(object):
 
     def __init__(self, win, xys, sizes):
-        # self.stimulus = RadialStim(win, tex='sinXsin', size=sizes, pos=[0, 0],
-        #                    radialCycles=0., angularCycles=0, interpolate=False,
-        #                    radialPhase=0., angularPhase=0)
-
         self.stimulus = Circle(win, radius=sizes, edges=128, fillColor=[1, 1, 1])
         self.xys = xys
 
