@@ -8,17 +8,13 @@ import numpy as np
 from braincoder.utils import get_rsq
 from nilearn import image
 import pandas as pd
+from models import get_paradigm, get_model, fit_model, get_conditionspecific_parameters
 
 def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', gaussian=True, debug=False):
 
-
     max_n_iterations = 100 if debug else 1000
 
-    if model_label == 1:
-        regressors = {'mu':'0 + C(range)', 'sd':'0 + C(range)', 'amplitude':'0 + C(range)', 'baseline':'0 + C(range)'}
-    else:
-        raise NotImplementedError("Only model 1 is implemented")
-
+    # Create target folder
     key = 'encoding_model'
     key += f'.model{model_label}'
 
@@ -28,61 +24,33 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
     if smoothed:
         key += '.smoothed'
 
-    sub = Subject(subject, bids_folder=bids_folder)
-    behavior = sub.get_behavioral_data(session=None)
-
     target_dir = op.join(bids_folder, 'derivatives', key, f'sub-{subject}', 'func')
 
     if not op.exists(target_dir):
         os.makedirs(target_dir)
 
-    data = sub.get_single_trial_estimates(session=None, smoothed=smoothed)
-    paradigm = behavior[['n', 'range']].rename(columns={'n':'x'})
-    paradigm['range'] = (paradigm['range'] == 'wide')
-    paradigm = paradigm.astype(np.float32)
+    # Get paradigm/data/model
+    sub = Subject(subject, bids_folder=bids_folder)
+    paradigm = get_paradigm(sub, model_label)
 
+    data = sub.get_single_trial_estimates(session=None, smoothed=smoothed)
     masker = sub.get_brain_mask(session=None, epi_space=True, return_masker=True, debug_mask=debug)
     data = pd.DataFrame(masker.fit_transform(data), index=paradigm.index).astype(np.float32)
 
-    if gaussian:
-        model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors)
-    else:
-        raise NotImplementedError("Only Gaussian PRF is implemented")
-
-    modes = np.linspace(5, 45, 5, dtype=np.float32)
-    sigmas = np.linspace(1, 60, 5, dtype=np.float32)
-    amplitudes = np.array([1.], dtype=np.float32)
-    baselines = np.array([0], dtype=np.float32)
+    # Get model
+    model = get_model(paradigm, model_label, gaussian=gaussian)
     
-    optimizer = ParameterFitter(model, data.astype(np.float32), paradigm.astype(np.float32))
+    # Fit model
+    pars = fit_model(model, paradigm, data, model_label, max_n_iterations=max_n_iterations)
 
-    print(model.parameter_labels)
-
-    if model_label == 1:
-        grid_pars = optimizer.fit_grid(modes, modes,
-                                       sigmas, sigmas,
-                                        amplitudes, amplitudes,
-                                        baselines, baselines)
-
-
-    fixed_pars = list(model.parameter_labels)
-    fixed_pars.pop(fixed_pars.index(('amplitude_unbounded', 'C(range)[0.0]')))
-    fixed_pars.pop(fixed_pars.index(('baseline_unbounded', 'C(range)[0.0]')))
-    fixed_pars.pop(fixed_pars.index(('amplitude_unbounded', 'C(range)[1.0]')))
-    fixed_pars.pop(fixed_pars.index(('baseline_unbounded', 'C(range)[1.0]')))
-
-    gd_pars = optimizer.fit(init_pars=grid_pars, learning_rate=.05, store_intermediate_parameters=False, max_n_iterations=max_n_iterations,
-            fixed_pars=fixed_pars,
-        r2_atol=0.0001)
-
-    gd_pars = optimizer.fit(init_pars=optimizer.estimated_parameters, learning_rate=.01, store_intermediate_parameters=False, max_n_iterations=max_n_iterations,
-                  fixed_pars=fixed_pars, r2_atol=0.00001)
-
-    conditions = pd.DataFrame({'x':[0,0], 'range':[0,1]}, index=pd.Index(['narrow', 'wide'], name='range'))
-    pars = model.get_conditionspecific_parameters(conditions, optimizer.estimated_parameters)
+    print(pars)
+    pred = model.predict(parameters=pars, paradigm=paradigm)
+    r2 = get_rsq(data, pred)
 
     target_fn = op.join(target_dir, f'sub-{subject}_desc-r2.optim_space-T1w_pars.nii.gz')
-    masker.inverse_transform(optimizer.r2).to_filename(target_fn)
+    masker.inverse_transform(r2).to_filename(target_fn)
+
+    pars = get_conditionspecific_parameters(model, pars)
 
     for range_n, values in pars.groupby('range'):
         for par, value in values.T.iterrows():
