@@ -9,12 +9,19 @@ import pandas as pd
 def get_paradigm(sub, model_label):
     behavior = sub.get_behavioral_data(session=None)
 
-    if model_label in [1, 2]:
+    if model_label in [1, 2, 3]:
         paradigm = behavior[['n', 'range']].rename(columns={'n':'x'})
         paradigm['range'] = (paradigm['range'] == 'wide')
-        paradigm = paradigm.astype(np.float32)
+    else:
+        raise NotImplementedError(f"Model {model_label} is not implemented")
+
+    if model_label == 3:
+        paradigm['beta'] = paradigm['range'].map({False:1, True:2})
+        paradigm.drop('range', axis=1, inplace=True)
     else:
         raise NotImplementedError("Only model 1 is implemented")
+
+    paradigm = paradigm.astype(np.float32)
 
     return paradigm
 
@@ -24,13 +31,20 @@ def get_model(paradigm, model_label, gaussian=True):
         regressors = {}
     elif model_label == 2:
         regressors = {'mu':'0 + C(range)', 'sd':'0 + C(range)', 'amplitude':'0 + C(range)', 'baseline':'0 + C(range)'}
+    elif model_label == 3:
+        regressors = {'mu':'0 + beta'}
     else:
         raise NotImplementedError("Only model 1 is implemented")
 
     if gaussian:
-        model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors)
+        if model_label in [1, 2]:
+            model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors)
+        elif model_label == 3:
+            model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors, baseline_parameter_values={'mu':10})
+        
     else:
         raise NotImplementedError("Only Gaussian PRF is implemented")
+
 
     return model
 
@@ -45,6 +59,12 @@ def fit_model(model, paradigm, data, model_label, max_n_iterations=1000):
     elif model_label in [2]:
         modes = np.linspace(5, 45, 13, dtype=np.float32)
         sigmas = np.linspace(1, 30, 13, dtype=np.float32)
+        amplitudes = np.array([1.], dtype=np.float32)
+        baselines = np.array([0], dtype=np.float32)
+    elif model_label in [3]:
+        # From (10 + ) 0 to 15 (so from 10 to 25)
+        modes = np.linspace(0, 15, 16, dtype=np.float32)
+        sigmas = np.linspace(1, 30, 15, dtype=np.float32)
         amplitudes = np.array([1.], dtype=np.float32)
         baselines = np.array([0], dtype=np.float32)
     
@@ -72,6 +92,15 @@ def fit_model(model, paradigm, data, model_label, max_n_iterations=1000):
         fixed_pars.pop(fixed_pars.index(('amplitude_unbounded', 'C(range)[1.0]')))
         fixed_pars.pop(fixed_pars.index(('baseline_unbounded', 'C(range)[1.0]')))
 
+    elif model_label == 3:
+        grid_pars = optimizer.fit_grid(modes, 
+                                       sigmas, 
+                                        amplitudes, 
+                                        baselines)
+        fixed_pars = list(model.parameter_labels)
+        fixed_pars.pop(fixed_pars.index(('amplitude_unbounded', 'Intercept')))
+        fixed_pars.pop(fixed_pars.index(('baseline_unbounded', 'Intercept')))
+
     # Fit one (only baseline/amplitude)
     gd_pars = optimizer.fit(init_pars=grid_pars, learning_rate=.05, store_intermediate_parameters=False, max_n_iterations=max_n_iterations,
             fixed_pars=fixed_pars,
@@ -83,8 +112,15 @@ def fit_model(model, paradigm, data, model_label, max_n_iterations=1000):
 
     return gd_pars
 
-def get_conditionspecific_parameters(model, estimated_parameters):
-    conditions = pd.DataFrame({'x':[0,0], 'range':[0,1]}, index=pd.Index(['narrow', 'wide'], name='range'))
+def get_conditionspecific_parameters(model_label, model, estimated_parameters):
+    
+    if model_label in [1,2]:
+        conditions = pd.DataFrame({'x':[0,0], 'range':[0,1]}, index=pd.Index(['narrow', 'wide'], name='range'))
+    elif model_label in [3]:
+        conditions = pd.DataFrame({'beta':[1,2]}, index=pd.Index(['narrow', 'wide'], name='range'))
+    else:
+        raise NotImplementedError(f"Model {model_label} is not implemented")
+        
     pars = model.get_conditionspecific_parameters(conditions, estimated_parameters)
 
     return pars

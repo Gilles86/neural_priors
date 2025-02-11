@@ -65,7 +65,7 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
         target_fn = op.join(target_dir, f'sub-{subject}_ses-{test_session}_run-{test_run}_desc-r2.optim_space-T1w_pars.nii.gz')
         masker.inverse_transform(r2).to_filename(target_fn)
 
-        condition_specific_pars = get_conditionspecific_parameters(model, pars)
+        condition_specific_pars = get_conditionspecific_parameters(model_label, model, pars)
 
         for range_n, values in condition_specific_pars.groupby('range'):
             for par, value in values.T.iterrows():
