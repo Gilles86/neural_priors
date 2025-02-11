@@ -10,7 +10,7 @@ from nilearn import image
 import pandas as pd
 
 def main(subject, session, smoothed, bids_folder, on_response=False, range_n=None, gaussian=False,
-        zscore_sessions=False):
+        zscore_sessions=False, fixed_baseline=False):
 
     if session == 0:
         session = None
@@ -29,11 +29,14 @@ def main(subject, session, smoothed, bids_folder, on_response=False, range_n=Non
     if on_response:
         key += '.on_response'
 
+    if fixed_baseline:
+        key += '.fixed_baseline'
+
     if range_n is not None:
         key += f'.range_{range_n}'
 
     sub = Subject(subject, bids_folder=bids_folder)
-    behavior = sub.get_behavioral_data(session=session, tasks=['estimation_task', ])
+    behavior = sub.get_behavioral_data(session=session)
 
     assert(range_n in [None, 'wide', 'narrow', 'wide2']), "range_n must be either None, 'wide', 'narrow', or 'wide2'"
 
@@ -70,17 +73,15 @@ def main(subject, session, smoothed, bids_folder, on_response=False, range_n=Non
     else:
         model = LogGaussianPRF(parameterisation='mode_fwhm_natural')
 
-    modes = np.linspace(1, 50, 100, dtype=np.float32)
+    modes = np.linspace(5, 45, 100, dtype=np.float32)
     fwhms = np.linspace(1, 60, 100, dtype=np.float32)
     amplitudes = np.array([1.], dtype=np.float32)
     baselines = np.array([0], dtype=np.float32)
 
-    if gaussian:
-        sigmas = fwhms / 2.355
-
     optimizer = ParameterFitter(model, data.astype(np.float32), paradigm.astype(np.float32))
 
     if gaussian:
+        sigmas = fwhms
         grid_parameters = optimizer.fit_grid(modes, sigmas, amplitudes, baselines, use_correlation_cost=True)
     else:
         grid_parameters = optimizer.fit_grid(modes, fwhms, amplitudes, baselines, use_correlation_cost=True)
@@ -92,17 +93,23 @@ def main(subject, session, smoothed, bids_folder, on_response=False, range_n=Non
 
 
     if gaussian:
-        optimizer.fit(init_pars=grid_parameters, learning_rate=.05, store_intermediate_parameters=False, max_n_iterations=10000,
-                fixed_pars=['mu', 'sd'],
-            r2_atol=0.00001)
+        fixed_pars = ['mu', 'sd']
     else:
-        optimizer.fit(init_pars=grid_parameters, learning_rate=.05, store_intermediate_parameters=False, max_n_iterations=10000,
-                fixed_pars=['mode', 'fwhm'],
-            r2_atol=0.00001)
+        fixed_pars = ['mode', 'fwhm']
 
-    optimizer.fit(init_pars=optimizer.estimated_parameters, learning_rate=.005, store_intermediate_parameters=False, max_n_iterations=10000,
-        min_n_iterations=1000,
+    if fixed_baseline:
+        fixed_pars += ['baseline']
+
+    optimizer.fit(init_pars=grid_parameters, learning_rate=.05, store_intermediate_parameters=False, max_n_iterations=10000,
+            fixed_pars=fixed_pars,
         r2_atol=0.00001)
+
+
+    fixed_pars = ['baseline'] if fixed_baseline else None
+
+    optimizer.fit(init_pars=optimizer.estimated_parameters, learning_rate=.01, store_intermediate_parameters=False, max_n_iterations=10000,
+                  fixed_pars=fixed_pars, r2_atol=0.00001)
+
     if session is None:
         target_fn = op.join(target_dir, f'sub-{subject}_desc-r2.optim_space-T1w_pars.nii.gz')
     else:
@@ -129,8 +136,10 @@ if __name__ == '__main__':
     parser.add_argument('--bids_folder', default='/data/ds-neuralpriors')
     parser.add_argument('--range', default=None)
     parser.add_argument('--gaussian', action='store_true')
+    parser.add_argument('--fixed_baseline', action='store_true')
     parser.add_argument('--zscore_sessions', action='store_true')
     args = parser.parse_args()
 
     main(args.subject, args.session, smoothed=args.smoothed, bids_folder=args.bids_folder, on_response=args.on_response,
-         range_n=args.range, gaussian=args.gaussian, zscore_sessions=args.zscore_sessions)
+         range_n=args.range, gaussian=args.gaussian, zscore_sessions=args.zscore_sessions,
+         fixed_baseline=args.fixed_baseline)
