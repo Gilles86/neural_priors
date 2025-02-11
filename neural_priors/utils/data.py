@@ -212,21 +212,42 @@ class Subject(object):
 
         return im
 
-    def get_brain_mask(self, session=None, epi_space=True, return_masker=True):
-
+    def get_brain_mask(self, session=None, epi_space=True, return_masker=True, debug_mask=False):
         if not epi_space:
             raise ValueError('Only EPI space is supported')
 
         session = 1 if session is None else session
 
         fn = op.join(self.bids_folder, 'derivatives', 'fmriprep', f'sub-{self.subject_id}',
-                        f'ses-{session}', 'func', f'sub-{self.subject_id}_ses-{session}_task-task_run-2_space-T1w_desc-brain_mask.nii.gz')
+                    f'ses-{session}', 'func', f'sub-{self.subject_id}_ses-{session}_task-task_run-2_space-T1w_desc-brain_mask.nii.gz')
 
-        
+        mask_img = image.load_img(fn)
+
+        if debug_mask:
+            # Convert to numpy array
+            mask_data = mask_img.get_fdata()
+
+            # Create a downsampled mask: keep 1 in 100 voxels
+            mask_indices = np.argwhere(mask_data > 0)
+            np.random.shuffle(mask_indices)
+            subsample_size = max(1, len(mask_indices) // 100)  # Ensure at least one voxel
+            subsample_indices = mask_indices[:subsample_size]
+
+            # Create a new empty mask
+            debug_mask_data = np.zeros_like(mask_data)
+
+            # Set the selected voxels to 1
+            for idx in subsample_indices:
+                debug_mask_data[tuple(idx)] = 1
+
+            # Create a new Nifti image
+            mask_img = image.new_img_like(mask_img, debug_mask_data)
+
         if return_masker:
-            return NiftiMasker(mask_img=fn)
+            return NiftiMasker(mask_img=mask_img)
 
-        return image.load_img(fn)
+        return mask_img
+
 
     def get_volume_mask(self, roi=None, session=None, epi_space=False, return_masker=False):
 
