@@ -2,11 +2,8 @@ import os
 import os.path as op
 import argparse
 from neural_priors.utils.data import Subject
-from braincoder.models import RegressionGaussianPRF
-from braincoder.optimize import ParameterFitter
 import numpy as np
 from braincoder.utils import get_rsq
-from nilearn import image
 import pandas as pd
 from models import get_paradigm, get_model, fit_model, get_conditionspecific_parameters
 

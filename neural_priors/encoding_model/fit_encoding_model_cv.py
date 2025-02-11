@@ -60,7 +60,7 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
 
         # In-set prediction
         pred = model.predict(parameters=pars, paradigm=train_paradigm)
-        r2 = get_rsq(data, pred)
+        r2 = get_rsq(train_data, pred)
 
         target_fn = op.join(target_dir, f'sub-{subject}_ses-{test_session}_run-{test_run}_desc-r2.optim_space-T1w_pars.nii.gz')
         masker.inverse_transform(r2).to_filename(target_fn)
