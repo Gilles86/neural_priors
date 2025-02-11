@@ -145,7 +145,7 @@ class Subject(object):
 
         return files
 
-    def get_onsets(self, session=1):
+    def get_onsets(self, session=None):
 
         if session is None:
             sessions = [1,2]
@@ -159,7 +159,7 @@ class Subject(object):
         return onsets
 
 
-    def get_confounds(self, session=1, type='minimum'):
+    def get_confounds(self, session=None, type='minimum'):
         runs = self.get_runs(session)
 
         confounds = pd.concat([pd.read_csv(op.join(self.bids_folder, 'derivatives', 'fmriprep', f'sub-{self.subject_id}', f'ses-{session}', 'func', f'sub-{self.subject_id}_ses-{session}_task-task_run-{run}_desc-confounds_timeseries.tsv'), sep='\t') for run in runs],
@@ -212,7 +212,7 @@ class Subject(object):
 
         return im
 
-    def get_brain_mask(self, session=1, epi_space=True, return_masker=True):
+    def get_brain_mask(self, session=None, epi_space=True, return_masker=True):
 
         if not epi_space:
             raise ValueError('Only EPI space is supported')
@@ -283,17 +283,22 @@ class Subject(object):
 
         return image.load_img(mask, dtype='int32')
 
-    def get_prf_parameters_volume(self, session, 
+    def get_prf_parameters_volume(self, session=None, 
             run=None,
             smoothed=False,
-            cross_validated=True,
+            fixed_baseline=False,
+            cross_validated=False,
             keys=None,
             roi=None,
             range_n=None,
             return_image=False,
             gaussian=False,
+            joint=False,
+            model_label=1,
             wprf=False):
 
+        if (session is not None) and (not cross_validated):
+            raise ValueError('Session must be None')
         if gaussian and wprf:
             raise ValueError('Cannot have both gaussian and wprf')
 
@@ -305,7 +310,10 @@ class Subject(object):
 
             dir += '.cv'
 
-        dir += '.denoise'
+        if joint:
+            dir += f'.joint.model{model_label}'
+        else:
+            dir += '.denoise'
 
         if wprf:
             dir += '.wprf'
@@ -316,9 +324,13 @@ class Subject(object):
         if smoothed:
             dir += '.smoothed'
 
+        if fixed_baseline:
+            dir += '.fixed_baseline'
+
         if range_n is not None:
             assert(range_n in ['wide', 'narrow', 'wide2']), f'range must be either "wide", "narrow", or "wide2"'
-            dir += f'.range_{range_n}'
+            if not joint:
+                dir += f'.range_{range_n}'
 
         parameters = []
 
@@ -339,25 +351,32 @@ class Subject(object):
             fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func',
                                     'sub-{subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
         else:
-            if session is None:
+            
+            if joint:
+                fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-{range_n}.{parameter_key}.optim_space-T1w_pars.nii.gz')
+                r2_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-r2.optim_space-T1w_pars.nii.gz')
+                cvr2_template = op.join(self.bids_folder, 'derivatives', dir.replace('encoding_model.joint', 'encoding_model.joint.cv'), f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')
+            else:
                 fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
                 cvr2_template = op.join(self.bids_folder, 'derivatives', dir.replace('encoding_model', 'encoding_model.cv'), f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')
-            else:
-                fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', f'ses-{session}', 'func', 'sub-{subject_id}_ses-{session}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
-                cvr2_template = op.join(self.bids_folder, 'derivatives', dir.replace('encoding_model', 'encoding_model.cv'), f'sub-{self.subject_id}', f'ses-{session}', 'func', 'sub-{subject_id}_ses-{session}_desc-cvr2.optim_space-T1w_pars.nii.gz')
 
         for parameter_key in keys:
 
-            if (parameter_key == 'cvr2') and (not cross_validated):
-                fn = cvr2_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id)
-            else:
-                fn = fn_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id)
-            
-            if not hasattr(masker, "mask_img_"):
-                masker.fit(fn)
+            try:
+                if (parameter_key == 'cvr2') and (not cross_validated):
+                    fn = cvr2_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id)
+                elif joint and (parameter_key == 'r2'):
+                    fn = r2_template.format(run=run, session=session, subject_id=self.subject_id)
+                else:
+                    fn = fn_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id, range_n=range_n)
+                
+                if not hasattr(masker, "mask_img_"):
+                    masker.fit(fn)
 
-            pars = pd.Series(apply_mask(fn, mask, ensure_finite=False))
-            parameters.append(pars)
+                pars = pd.Series(apply_mask(fn, mask, ensure_finite=False))
+                parameters.append(pars)
+            except Exception as e:
+                print(f'Could not load {fn}: {e}')
 
         parameters =  pd.concat(parameters, axis=1, keys=keys, names=['parameter']).astype(np.float32)
 
