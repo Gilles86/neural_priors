@@ -104,7 +104,7 @@ def fit_model(model, paradigm, data, model_label, max_n_iterations=1000):
     # Fit one (only baseline/amplitude)
     gd_pars = optimizer.fit(init_pars=grid_pars, learning_rate=.05, store_intermediate_parameters=False, max_n_iterations=max_n_iterations,
             fixed_pars=fixed_pars,
-        r2_atol=0.0001)
+        r2_atol=0.001)
 
     # Fit two
     gd_pars = optimizer.fit(init_pars=optimizer.estimated_parameters, learning_rate=.01, store_intermediate_parameters=False, max_n_iterations=max_n_iterations,
