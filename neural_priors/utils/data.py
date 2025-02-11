@@ -228,7 +228,7 @@ class Subject(object):
 
         return image.load_img(fn)
 
-    def get_volume_mask(self, roi=None, session=None, epi_space=False):
+    def get_volume_mask(self, roi=None, session=None, epi_space=False, return_masker=False):
 
         if session is None:
             session = 1
@@ -277,6 +277,9 @@ class Subject(object):
 
         else:
             raise NotImplementedError
+
+        if return_masker:
+            return NiftiMasker(mask)
 
         return image.load_img(mask, dtype='int32')
 
