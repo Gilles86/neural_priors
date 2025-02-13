@@ -7,7 +7,8 @@ from nilearn.maskers import NiftiMasker
 from nilearn.masking import apply_mask
 import pkg_resources
 import yaml
-from braincoder.models import LogGaussianPRF, GaussianPRF
+from tqdm.contrib.itertools import product
+from itertools import product as product_
 
 def get_all_subject_ids(only_full=True):
     with pkg_resources.resource_stream('neural_priors', '/data/subjects.yml') as stream:
@@ -249,81 +250,112 @@ class Subject(object):
         return mask_img
 
 
-    def get_volume_mask(self, roi=None, session=None, epi_space=False, return_masker=False):
+    def get_volume_mask(self, roi=None, session=1, epi_space=False, return_masker=False, verbose=False):
+        """Retrieve a volume mask, optionally in EPI space and as a NiftiMasker."""
 
-        if session is None:
-            session = 1
+        def _log(msg):
+            """Helper function for verbose logging."""
+            if verbose:
+                print(msg)
 
-        base_mask = op.join(self.bids_folder, 'derivatives', f'fmriprep/sub-{self.subject_id}/ses-{session}/func/sub-{self.subject_id}_ses-{session}_task-task_run-1_space-T1w_desc-brain_mask.nii.gz')
-        base_mask = image.load_img(base_mask, dtype='int32') # To prevent weird nilearn warning
+        _log(f"Session: {session}, ROI: {roi}, epi_space: {epi_space}, return_masker: {return_masker}")
 
+        # Load the base brain mask
+        base_mask_path = op.join(
+            self.bids_folder, 'derivatives', f'fmriprep/sub-{self.subject_id}/ses-{session}/func',
+            f'sub-{self.subject_id}_ses-{session}_task-task_run-1_space-T1w_desc-brain_mask.nii.gz'
+        )
+        base_mask = image.load_img(base_mask_path, dtype='int32')  # Prevent weird nilearn warning
+
+        # Resample to first functional run (ensuring affine match)
         first_run = self.get_preprocessed_bold(session=session, runs=[1])[0]
-        base_mask = image.resample_to_img(base_mask, first_run, interpolation='nearest')
+        base_mask = image.resample_to_img(base_mask, first_run, interpolation='nearest', force_resample=False, copy_header=True)
+        _log("Base mask loaded and resampled.")
 
+        # Handle case when ROI is None
         if roi is None:
             if epi_space:
-                return base_mask
+                mask = base_mask
             else:
+                _log("ROI is None and epi_space=False -> Raising NotImplementedError")
                 raise NotImplementedError
 
-        elif roi.startswith('NPC') or roi.startswith('NF') or roi.startswith('NTO'):
-            
-            anat_mask = op.join(self.derivatives_dir
-            ,'ips_masks',
-            f'sub-{self.subject_id}',
-            'anat',
-            f'sub-{self.subject_id}_space-T1w_desc-{roi}_mask.nii.gz'
+        # Handle anatomical masks
+        elif roi.startswith(('NPC', 'NF', 'NTO')):  # Tuple avoids multiple `or` conditions
+            _log(f"Processing ROI: {roi}")
+
+            anat_mask_path = op.join(
+                self.derivatives_dir, 'ips_masks', f'sub-{self.subject_id}', 'anat',
+                f'sub-{self.subject_id}_space-T1w_desc-{roi}_mask.nii.gz'
             )
 
             if epi_space:
-                epi_mask = op.join(self.derivatives_dir
-                                    ,'ips_masks',
-                                    f'sub-{self.subject_id}',
-                                    'func',
-                                    f'ses-{session}',
-                                    f'sub-{self.subject_id}_space-T1w_desc-{roi}_mask.nii.gz')
+                epi_mask_path = op.join(
+                    self.derivatives_dir, 'ips_masks', f'sub-{self.subject_id}', 'func',
+                    f'ses-{session}', f'sub-{self.subject_id}_space-T1w_desc-{roi}_mask.nii.gz'
+                )
 
-                if not op.exists(epi_mask):
-                    if not op.exists(op.dirname(epi_mask)):
-                        os.makedirs(op.dirname(epi_mask))
+                if not op.exists(epi_mask_path):
+                    _log(f"EPI mask does not exist: {epi_mask_path}, creating it.")
 
+                    # Ensure parent directory exists
+                    os.makedirs(op.dirname(epi_mask_path), exist_ok=True)
 
-                    im = image.resample_to_img(image.load_img(anat_mask, dtype='int32'), image.load_img(base_mask, dtype='int32'), interpolation='nearest')
-                    im.to_filename(epi_mask)
+                    # Resample anatomical mask to EPI space and save
+                    im = image.resample_to_img(
+                        image.load_img(anat_mask_path, dtype='int32'),
+                        image.load_img(base_mask, dtype='int32'),
+                        interpolation='nearest'
+                    )
+                    im.to_filename(epi_mask_path)
+                    _log(f"Saved new EPI mask: {epi_mask_path}")
 
-                mask = epi_mask
-
-            else: 
-                mask = anat_mask
+                mask = epi_mask_path
+            else:
+                mask = anat_mask_path
 
         else:
+            _log(f"Unknown ROI: {roi} -> Raising NotImplementedError")
             raise NotImplementedError
 
-        if return_masker:
-            return NiftiMasker(mask)
+        _log(f"Final mask path: {mask}")
 
-        return image.load_img(mask, dtype='int32')
+        # Load the final mask as a Nifti1Image
+        mask = image.load_img(mask, dtype='int32')
+        _log("Loaded final mask into Nifti1Image.")
+
+        # Return either a NiftiMasker or the raw mask
+        if return_masker:
+            _log("Returning NiftiMasker")
+            masker = NiftiMasker(mask_img=mask, resampling_target="data")  # Ensures compatibility with input images
+            masker.fit()
+            return masker
+
+        _log("Returning final mask as Nifti1Image.")
+        return mask
 
     def get_prf_parameters_volume(self, session=None, 
             run=None,
-            smoothed=False,
-            fixed_baseline=False,
+            smoothed=True,
             cross_validated=False,
             keys=None,
             roi=None,
-            range_n=None,
             return_image=False,
-            gaussian=False,
-            joint=False,
-            model_label=1,
-            wprf=False):
+            gaussian=True,
+            model_label=1):
 
         if (session is not None) and (not cross_validated):
             raise ValueError('Session must be None')
-        if gaussian and wprf:
-            raise ValueError('Cannot have both gaussian and wprf')
 
         dir = 'encoding_model'
+
+        dir += f'.model{model_label}'
+        
+        if gaussian:
+            dir += '.gaussian'
+
+        if smoothed:
+            dir += '.smoothed'
 
         if cross_validated:
             if run is None:
@@ -331,75 +363,41 @@ class Subject(object):
 
             dir += '.cv'
 
-        if joint:
-            dir += f'.joint.model{model_label}'
-        else:
-            dir += '.denoise'
-
-        if wprf:
-            dir += '.wprf'
-
-        if gaussian:
-            dir += '.gaussian'
-
-        if smoothed:
-            dir += '.smoothed'
-
-        if fixed_baseline:
-            dir += '.fixed_baseline'
-
-        if range_n is not None:
-            assert(range_n in ['wide', 'narrow', 'wide2']), f'range must be either "wide", "narrow", or "wide2"'
-            if not joint:
-                dir += f'.range_{range_n}'
-
         parameters = []
 
-        if keys is None:
-            if wprf:
-                keys= ['cvr2']
-            elif gaussian:
-                keys = ['mu', 'sd', 'amplitude', 'baseline', 'r2', 'cvr2']
-            else:
-                keys = ['mode', 'fwhm', 'amplitude', 'baseline', 'r2', 'cvr2']
+        assert keys is None or 'r2' not in keys, 'r2 is always included'
+        assert keys is None or 'cvr2' not in keys, 'cvr2 is always included'
 
-        mask = self.get_volume_mask(session=session, roi=roi, epi_space=True)
-        masker = NiftiMasker(mask)
+        if keys is None:
+            if gaussian:
+                keys = ['mu', 'sd', 'amplitude', 'baseline']
+            else:
+                keys = ['mode', 'fwhm', 'amplitude', 'baseline']
+
+        masker = self.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
 
         if cross_validated:
             if session is None:
                 raise ValueError('Session must be given for cross-validated data')
             fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func',
-                                    'sub-{subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
+                                    'sub-{subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.{range_n}.optim_space-T1w_pars.nii.gz')
         else:
-            
-            if joint:
-                fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-{range_n}.{parameter_key}.optim_space-T1w_pars.nii.gz')
-                r2_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-r2.optim_space-T1w_pars.nii.gz')
-                cvr2_template = op.join(self.bids_folder, 'derivatives', dir.replace('encoding_model.joint', 'encoding_model.joint.cv'), f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')
-            else:
-                fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-{parameter_key}.optim_space-T1w_pars.nii.gz')
-                cvr2_template = op.join(self.bids_folder, 'derivatives', dir.replace('encoding_model', 'encoding_model.cv'), f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')
+            fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-{parameter_key}.{range_n}.optim_space-T1w_pars.nii.gz')
 
-        for parameter_key in keys:
+        for parameter_key, range_n in product_(keys, ['wide', 'narrow']):
+            fn = fn_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id, range_n=range_n)
+            pars = pd.Series(masker.transform(fn).squeeze(), name=(parameter_key, range_n))
+            parameters.append(pars)
 
-            try:
-                if (parameter_key == 'cvr2') and (not cross_validated):
-                    fn = cvr2_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id)
-                elif joint and (parameter_key == 'r2'):
-                    fn = r2_template.format(run=run, session=session, subject_id=self.subject_id)
-                else:
-                    fn = fn_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id, range_n=range_n)
-                
-                if not hasattr(masker, "mask_img_"):
-                    masker.fit(fn)
 
-                pars = pd.Series(apply_mask(fn, mask, ensure_finite=False))
-                parameters.append(pars)
-            except Exception as e:
-                print(f'Could not load {fn}: {e}')
+        r2_fn = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', f'sub-{self.subject_id}_desc-r2.optim_space-T1w_pars.nii.gz')
+        cvr2_fn = op.join(self.bids_folder, 'derivatives', dir+'.cv', f'sub-{self.subject_id}', f'func', f'sub-{self.subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')
 
-        parameters =  pd.concat(parameters, axis=1, keys=keys, names=['parameter']).astype(np.float32)
+        parameters.append(pd.Series(masker.transform(r2_fn).squeeze(), name=('r2', None)))
+        parameters.append(pd.Series(masker.transform(cvr2_fn).squeeze(), name=('cvr2', None)))
+        keys.append(['r2', 'cvr2'])
+
+        parameters =  pd.concat(parameters, axis=1, names=['parameter', 'range']).astype(np.float32)
 
         if return_image:
             return masker.inverse_transform(parameters.T)
@@ -424,68 +422,36 @@ class Subject(object):
 
         return info
 
-    def get_prf_parameters_surf(self, session, run=None, smoothed=False, cross_validated=False, hemi=None,
-                                mask=None, space='fsnative', parameters=None, key=None, nilearn=True,
-                                range_n=None):
+    def get_prf_parameters_surf(self, model_label, smoothed=False, hemi=None, space='fsnative', gaussian=True):
 
-        if nilearn is False:
-            raise NotImplementedError
-
-        if mask is not None:
-            raise NotImplementedError
-
-        if parameters is None:
-            parameter_keys = ['mode', 'fwhm', 'amplitude', 'cvr2', 'r2']
-        else:
-            parameter_keys = parameters
+        parameter_keys = ['cvr2']
 
         if hemi is None:
-            prf_l = self.get_prf_parameters_surf(session, 
-                    run, smoothed, cross_validated, hemi='L',
-                    mask=mask, space=space, key=key, parameters=parameters, nilearn=nilearn,
-                    range_n=range_n)
-            prf_r = self.get_prf_parameters_surf(session, 
-                    run, smoothed, cross_validated, hemi='R',
-                    mask=mask, space=space, key=key, parameters=parameters, nilearn=nilearn,
-                    range_n=range_n)
+            prf_l = self.get_prf_parameters_surf(model_label, smoothed, hemi='L', space=space)
+            prf_r = self.get_prf_parameters_surf(model_label, smoothed, hemi='R', space=space)
             
             return pd.concat((prf_l, prf_r), axis=0, 
                     keys=pd.Index(['L', 'R'], name='hemi'))
+        key = 'encoding_model'
 
+        key += f'.model{model_label}'
 
-        if key is None:
-            if cross_validated:
-                key = 'encoding_model.cv.denoise'
-            else:
-                key = 'encoding_model.denoise'
+        if gaussian:
+            key += '.gaussian'
+        else:
+            raise NotImplementedError
 
-            if smoothed:
-                key += '.smoothed'
-
-        if range_n is not None:
-            key += f'.range_{range_n}'
+        if smoothed:
+            key += '.smoothed'
 
         parameters = []
 
-        if session is None:
-            dir = op.join(self.bids_folder, 'derivatives', key, f'sub-{self.subject_id}', 'func')
-
-            if run is not None:
-                fn_template = op.join(dir, 'sub-{subject_id}_run-{run}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
-            else:
-                fn_template = op.join(dir, 'sub-{subject_id}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
-
-        else:
-            dir = op.join(self.bids_folder, 'derivatives', key, f'sub-{self.subject_id}', f'ses-{session}', 'func')
-
-            if run is not None:
-                fn_template = op.join(dir, 'sub-{subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
-            else:
-                fn_template = op.join(dir, 'sub-{subject_id}_ses-{session}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
+        dir = op.join(self.bids_folder, 'derivatives', key, f'sub-{self.subject_id}', 'func')
+        fn_template = op.join(dir, 'sub-{subject_id}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
 
         for parameter_key in parameter_keys:
 
-            fn = fn_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id, hemi=hemi, space=space)
+            fn = fn_template.format(parameter_key=parameter_key, subject_id=self.subject_id, hemi=hemi, space=space)
 
             pars = pd.Series(surface.load_surf_data(fn))
             pars.index.name = 'vertex'
@@ -514,6 +480,7 @@ class Subject(object):
 
         paradigm = self.get_behavioral_data()['n']
 
+        from braincoder.models import LogGaussianPRF, GaussianPRF
         if gaussian:
             model = GaussianPRF(paradigm=paradigm, parameters=prf_pars)
         else:
