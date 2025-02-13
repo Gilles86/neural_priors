@@ -20,6 +20,8 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
 
     if gaussian:
         key += '.gaussian'
+    else:
+        key += '.logspace'
 
     if smoothed:
         key += '.smoothed'
@@ -33,7 +35,7 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
 
     # Get paradigm/data/model
     sub = Subject(subject, bids_folder=bids_folder)
-    paradigm = get_paradigm(sub, model_label)
+    paradigm = get_paradigm(sub, model_label, gaussian=gaussian)
 
     paradigm = paradigm.set_index(pd.Index((paradigm.index.get_level_values('run') - 1) % 4 + 1, name='run2'), append=True)
     paradigm.index = paradigm.index.swaplevel('run', 'run2')
@@ -56,7 +58,7 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
         model = get_model(train_paradigm, model_label, gaussian=gaussian)
     
         # # Fit model
-        pars = fit_model(model, train_paradigm, train_data, model_label, max_n_iterations=max_n_iterations)
+        pars = fit_model(model, train_paradigm, train_data, model_label, max_n_iterations=max_n_iterations, gaussian=gaussian)
 
         # In-set prediction
         pred = model.predict(parameters=pars, paradigm=train_paradigm)
@@ -65,7 +67,7 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
         target_fn = op.join(target_dir, f'sub-{subject}_ses-{test_session}_run-{test_run}_desc-r2.optim_space-T1w_pars.nii.gz')
         masker.inverse_transform(r2).to_filename(target_fn)
 
-        condition_specific_pars = get_conditionspecific_parameters(model_label, model, pars)
+        condition_specific_pars = get_conditionspecific_parameters(model_label, model, pars, gaussian=gaussian)
 
         for range_n, values in condition_specific_pars.groupby('range'):
             for par, value in values.T.iterrows():
@@ -97,6 +99,7 @@ if __name__ == '__main__':
     parser.add_argument('--bids_folder', default='/data/ds-neuralpriors')
     parser.add_argument('--smoothed', action='store_true')
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--log_space', action='store_true')
     args = parser.parse_args()
 
-    main(args.subject, model_label=args.model_label, smoothed=args.smoothed, bids_folder=args.bids_folder, debug=args.debug)
+    main(args.subject, model_label=args.model_label, smoothed=args.smoothed, bids_folder=args.bids_folder, debug=args.debug, gaussian=not args.log_space)

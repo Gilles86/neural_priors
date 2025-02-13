@@ -17,6 +17,8 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
 
     if gaussian:
         key += '.gaussian'
+    else:
+        key += '.logspace'
 
     if smoothed:
         key += '.smoothed'
@@ -28,7 +30,9 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
 
     # Get paradigm/data/model
     sub = Subject(subject, bids_folder=bids_folder)
-    paradigm = get_paradigm(sub, model_label)
+    paradigm = get_paradigm(sub, model_label, gaussian=gaussian)
+
+    print(paradigm)
 
     data = sub.get_single_trial_estimates(session=None, smoothed=smoothed)
     masker = sub.get_brain_mask(session=None, epi_space=True, return_masker=True, debug_mask=debug)
@@ -38,7 +42,7 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
     model = get_model(paradigm, model_label, gaussian=gaussian)
     
     # Fit model
-    pars = fit_model(model, paradigm, data, model_label, max_n_iterations=max_n_iterations)
+    pars = fit_model(model, paradigm, data, model_label, max_n_iterations=max_n_iterations, gaussian=gaussian)
 
     print(pars)
     pred = model.predict(parameters=pars, paradigm=paradigm)
@@ -47,7 +51,7 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
     target_fn = op.join(target_dir, f'sub-{subject}_desc-r2.optim_space-T1w_pars.nii.gz')
     masker.inverse_transform(r2).to_filename(target_fn)
 
-    pars = get_conditionspecific_parameters(model_label, model, pars)
+    pars = get_conditionspecific_parameters(model_label, model, pars, gaussian=gaussian)
 
     print(pars.unstack('range'))
 
@@ -62,7 +66,8 @@ if __name__ == '__main__':
     parser.add_argument('--model_label', default=1, type=int)
     parser.add_argument('--bids_folder', default='/data/ds-neuralpriors')
     parser.add_argument('--smoothed', action='store_true')
+    parser.add_argument('--log_space', action='store_true')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
-    main(args.subject, model_label=args.model_label, smoothed=args.smoothed, bids_folder=args.bids_folder, debug=args.debug)
+    main(args.subject, model_label=args.model_label, smoothed=args.smoothed, bids_folder=args.bids_folder, debug=args.debug, gaussian=not args.log_space)
