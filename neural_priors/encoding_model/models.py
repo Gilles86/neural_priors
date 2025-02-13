@@ -14,12 +14,13 @@ import pandas as pd
 6. Model D, 5-parameters (mu free, everything else fixed)
 7. Model E, 7-parameters (mu is the same across two conditions)
 8. Model F, 6-parameters (mu and sd free, everything else fixed)
+9. Model F, 4-parameters (sd free, everything else fixed)
 '''
 
 def get_paradigm(sub, model_label):
     behavior = sub.get_behavioral_data(session=None)
 
-    if model_label in [1, 2, 3, 4, 5, 6, 7, 8]:
+    if model_label in [1, 2, 3, 4, 5, 6, 7, 8, 9]:
         paradigm = behavior[['n', 'range']].rename(columns={'n':'x'})
         paradigm['range'] = (paradigm['range'] == 'wide')
     else:
@@ -53,11 +54,13 @@ def get_model(paradigm, model_label, gaussian=True):
         regressors = {'sd':'0 + C(range)', 'amplitude':'0 + C(range)', 'baseline':'0 + C(range)'}
     elif model_label == 8:
         regressors = {'mu':'0 + C(range)', 'sd':'0 + C(range)'}
+    elif model_label == 9:
+        regressors = {'sd':'0 + C(range)'}
     else:
         raise NotImplementedError(f"Model {model_label} is not implemented")
 
     if gaussian:
-        if model_label in [1, 2, 6, 7, 8]:
+        if model_label in [1, 2, 6, 7, 8, 9]:
             model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors)
         elif model_label in [3, 4, 5]:
             model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors, baseline_parameter_values={'mu':10})
@@ -82,17 +85,17 @@ def fit_model(model, paradigm, data, model_label, max_n_iterations=1000):
         baselines = np.array([0], dtype=np.float32)
     elif model_label in [3, 5]:
         # From (10 + ) 0 to 15 (so from 10 to 25)
-        modes = np.linspace(0, 15, 16, dtype=np.float32)
-        sigmas = np.linspace(3, 30, 15, dtype=np.float32)
+        modes = np.linspace(0, 15, 41, dtype=np.float32)
+        sigmas = np.linspace(3, 30, 30, dtype=np.float32)
         amplitudes = np.array([1.], dtype=np.float32)
         baselines = np.array([0], dtype=np.float32)
     elif model_label in [4]:
         # From (10 + ) 0 to 15 (so from 10 to 25)
-        modes = np.linspace(0, 15, 16, dtype=np.float32)
-        sigmas = np.linspace(3, 15, 15, dtype=np.float32)
+        modes = np.linspace(0, 15, 41, dtype=np.float32)
+        sigmas = np.linspace(3, 30, 30, dtype=np.float32)
         amplitudes = np.array([1.], dtype=np.float32)
         baselines = np.array([0], dtype=np.float32)
-    elif model_label in [6]:
+    elif model_label in [6, 9]:
         modes = np.linspace(5, 45, 16, dtype=np.float32)
         sigmas = np.linspace(3, 15, 15, dtype=np.float32)
         amplitudes = np.array([1.], dtype=np.float32)
@@ -100,7 +103,7 @@ def fit_model(model, paradigm, data, model_label, max_n_iterations=1000):
     
     optimizer = ParameterFitter(model, data.astype(np.float32), paradigm.astype(np.float32))
 
-    if model_label in [1, 3, 4, 6, 8]:
+    if model_label in [1, 3, 4, 6, 8, 9]:
         
         if model_label == 6:
             grid_pars = optimizer.fit_grid(modes, modes,
@@ -110,6 +113,12 @@ def fit_model(model, paradigm, data, model_label, max_n_iterations=1000):
         elif model_label == 8:
             grid_pars = optimizer.fit_grid(modes, modes,
                                         sigmas, sigmas,
+                                            amplitudes, 
+                                            baselines)
+        elif model_label == 9:
+            grid_pars = optimizer.fit_grid(modes, 
+                                           sigmas,
+                                            sigmas, 
                                             amplitudes, 
                                             baselines)
         else:
@@ -160,7 +169,7 @@ def fit_model(model, paradigm, data, model_label, max_n_iterations=1000):
 
 def get_conditionspecific_parameters(model_label, model, estimated_parameters):
     
-    if model_label in [1,2, 6, 7, 8]:
+    if model_label in [1,2, 6, 7, 8, 9]:
         conditions = pd.DataFrame({'x':[0,0], 'range':[0,1]}, index=pd.Index(['narrow', 'wide'], name='range'))
     elif model_label in [3, 4]:
         conditions = pd.DataFrame({'beta':[1,2]}, index=pd.Index(['narrow', 'wide'], name='range'))
