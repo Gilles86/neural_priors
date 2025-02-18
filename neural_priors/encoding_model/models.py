@@ -25,7 +25,7 @@ def get_paradigm(sub, model_label, gaussian=True):
 
     range_increase = range_increase_log_space if not gaussian else range_increase_natural_space
 
-    if model_label in [1, 2, 3, 4, 5, 6, 7, 8, 9]:
+    if model_label in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
         paradigm = behavior[['n', 'range']].rename(columns={'n':'x'})
         paradigm['range'] = (paradigm['range'] == 'wide')
 
@@ -34,7 +34,7 @@ def get_paradigm(sub, model_label, gaussian=True):
     else:
         raise NotImplementedError(f"Model {model_label} is not implemented")
 
-    if model_label in[3, 4]:
+    if model_label in[3, 4, 10]:
 
         paradigm['beta'] = paradigm['range'].map({False:1, True:range_increase})
 
@@ -67,10 +67,12 @@ def get_model(paradigm, model_label, gaussian=True):
         regressors = {'mu':'0 + C(range)', 'sd':'0 + C(range)'}
     elif model_label == 9:
         regressors = {'sd':'0 + C(range)'}
+    elif model_label == 10:
+        regressors = {'sd':'0 + beta'}
     else:
         raise NotImplementedError(f"Model {model_label} is not implemented")
 
-    if model_label in [1, 2, 6, 7, 8, 9]:
+    if model_label in [1, 2, 6, 7, 8, 9, 10]:
         model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors)
     elif model_label in [3, 4, 5]:
         if gaussian:
@@ -88,11 +90,11 @@ def get_parameter_grids(model_label, gaussian=True):
 
     # Define mode and sigma ranges
     model_params = {
-        (1, 7): (5, 45, 41, 3, 30, 30),
-        (2, 8): (5, 45, 13, 3, 30, 13),
-        (3, 5): (0, 15, 16, 3, 30, 15),  # Special case for log-space
-        (4,):   (0, 15, 16, 3, 15, 15),  # Special case for log-space
-        (6,):   (5, 45, 16, 3, 15, 15),
+        (1, 7,): (5, 45, 41, 3, 30, 30),
+        (2, 8, 9): (5, 45, 13, 3, 30, 13),
+        (5,): (0, 15, 16, 3, 30, 15),  # Special case for log-space
+        (3, 4,):   (0, 15, 41, 3, 15, 30),  # Special case for log-space
+        (6,10):   (5, 45, 16, 3, 15, 15),
     }
 
     for labels, (mode_min, mode_max, mode_steps, sigma_min, sigma_max, sigma_steps) in model_params.items():
@@ -120,7 +122,7 @@ def fit_model(model, paradigm, data, model_label, max_n_iterations=1000, gaussia
     
     optimizer = ParameterFitter(model, data.astype(np.float32), paradigm.astype(np.float32))
 
-    if model_label in [1, 3, 4, 6, 8, 9]:
+    if model_label in [1, 3, 4, 6, 8, 9, 10]:
         
         if model_label == 6:
             grid_pars = optimizer.fit_grid(modes, modes,
@@ -192,7 +194,7 @@ def get_conditionspecific_parameters(model_label, model, estimated_parameters, g
     
     if model_label in [1,2, 6, 7, 8, 9]:
         conditions = pd.DataFrame({'x':[0,0], 'range':[0,1]}, index=pd.Index(['narrow', 'wide'], name='range'))
-    elif model_label in [3, 4]:
+    elif model_label in [3, 4, 10]:
         conditions = pd.DataFrame({'beta':[1,range_increase]}, index=pd.Index(['narrow', 'wide'], name='range'))
     elif model_label in [5]:
         conditions = pd.DataFrame({'beta':[1,range_increase], 'range':[0,1]}, index=pd.Index(['narrow', 'wide'], name='range'))
