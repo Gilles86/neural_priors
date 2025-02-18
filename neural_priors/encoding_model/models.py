@@ -18,7 +18,7 @@ import pandas as pd
 '''
 
 range_increase_natural_space = (40 - 10) / (25 - 10) # (2)
-range_increase_log_space = np.log(40) - np.log(10) / (np.log(25) - np.log(10)) # (2)
+range_increase_log_space = (np.log(40) - np.log(10)) / (np.log(25) - np.log(10)) # (2)
 
 def get_paradigm(sub, model_label, gaussian=True):
     behavior = sub.get_behavioral_data(session=None)
