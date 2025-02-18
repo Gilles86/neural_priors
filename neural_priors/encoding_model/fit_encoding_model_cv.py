@@ -10,7 +10,7 @@ from nilearn import image
 import pandas as pd
 from models import get_paradigm, get_model, fit_model, get_conditionspecific_parameters
 
-def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', gaussian=True, debug=False):
+def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', gaussian=True, debug=False, store_cv_parameters=False):
 
     max_n_iterations = 10 if debug else 1000
 
@@ -60,26 +60,29 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
         # # Fit model
         pars = fit_model(model, train_paradigm, train_data, model_label, max_n_iterations=max_n_iterations, gaussian=gaussian)
 
-        # In-set prediction
+        # In-set predictions
         pred = model.predict(parameters=pars, paradigm=train_paradigm)
         r2 = get_rsq(train_data, pred)
 
-        target_fn = op.join(target_dir, f'sub-{subject}_ses-{test_session}_run-{test_run}_desc-r2.optim_space-T1w_pars.nii.gz')
-        masker.inverse_transform(r2).to_filename(target_fn)
-
-        condition_specific_pars = get_conditionspecific_parameters(model_label, model, pars, gaussian=gaussian)
-
-        for range_n, values in condition_specific_pars.groupby('range'):
-            for par, value in values.T.iterrows():
-                target_fn = op.join(target_dir, f'sub-{subject}_ses-{test_session}_run-{test_run}_desc-{par}.{range_n}.optim_space-T1w_pars.nii.gz')
-                masker.inverse_transform(value).to_filename(target_fn)
-
+        # Out-of-set predictions
         model.set_paradigm(test_paradigm)
         pred = model.predict(parameters=pars, paradigm=test_paradigm)
         cvr2 = get_rsq(test_data, pred)
 
-        target_fn = op.join(target_dir, f'sub-{subject}_ses-{test_session}_run-{test_run}_desc-cvr2.optim_space-T1w_pars.nii.gz')
-        masker.inverse_transform(cvr2).to_filename(target_fn)
+        if store_cv_parameters:
+            target_fn = op.join(target_dir, f'sub-{subject}_ses-{test_session}_run-{test_run}_desc-r2.optim_space-T1w_pars.nii.gz')
+            masker.inverse_transform(r2).to_filename(target_fn)
+
+            condition_specific_pars = get_conditionspecific_parameters(model_label, model, pars, gaussian=gaussian)
+
+            for range_n, values in condition_specific_pars.groupby('range'):
+                for par, value in values.T.iterrows():
+                    target_fn = op.join(target_dir, f'sub-{subject}_ses-{test_session}_run-{test_run}_desc-{par}.{range_n}.optim_space-T1w_pars.nii.gz')
+                    masker.inverse_transform(value).to_filename(target_fn)
+
+
+            target_fn = op.join(target_dir, f'sub-{subject}_ses-{test_session}_run-{test_run}_desc-cvr2.optim_space-T1w_pars.nii.gz')
+            masker.inverse_transform(cvr2).to_filename(target_fn)
 
         print(cvr2)
 
@@ -100,6 +103,7 @@ if __name__ == '__main__':
     parser.add_argument('--smoothed', action='store_true')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--log_space', action='store_true')
+    parser.add_argument('--store_cv_parameters', action='store_true')
     args = parser.parse_args()
 
-    main(args.subject, model_label=args.model_label, smoothed=args.smoothed, bids_folder=args.bids_folder, debug=args.debug, gaussian=not args.log_space)
+    main(args.subject, model_label=args.model_label, smoothed=args.smoothed, bids_folder=args.bids_folder, debug=args.debug, gaussian=not args.log_space, store_cv_parameters=args.store_cv_parameters)
