@@ -102,7 +102,7 @@ def get_parameter_grids(model_label, gaussian=True):
         modes1 = make_grid(11, 24, int(14/2.), not gaussian)
         modes2 = make_grid(11, 39, int(29/2.), not gaussian)
         # sigmas = make_grid(3, 30, int(15/2.), not gaussian)
-        sigmas = np.linspace(3, 30, 15) if not gaussian else np.linspace(.1, 2., 10)
+        sigmas = np.linspace(2.5, 15, 15) if gaussian else np.linspace(.1, 2., 10)
         return modes1, modes2, sigmas, amplitudes, baselines
 
     # Standard mode/sigma definitions for other models
