@@ -14,8 +14,9 @@ import pandas as pd
 6. Model D, 5-parameters (mu free, everything else fixed)
 7. Model E, 7-parameters (mu is the same across two conditions)
 8. 6-parameters (mu and sd free, everything else fixed)
-9. 4-parameters (sd free, everything else fixed)
-10. Like model 8, BUT starting points from 11 to 24 and 11 to 39
+9. 5-parameters (sd free, everything else fixed)
+10. 4-parameters, only SD follows range adaptation
+11. Like model 8, BUT starting points from 11 to 24 and 11 to 39
 '''
 
 range_increase_natural_space = (40 - 10) / (25 - 10) # (2)
