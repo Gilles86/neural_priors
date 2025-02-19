@@ -342,6 +342,7 @@ class Subject(object):
             roi=None,
             return_image=False,
             gaussian=True,
+            include_cvr2=True,
             model_label=1):
 
         if (session is not None) and (not cross_validated):
@@ -353,6 +354,8 @@ class Subject(object):
         
         if gaussian:
             dir += '.gaussian'
+        else:
+            dir += '.logspace'
 
         if smoothed:
             dir += '.smoothed'
@@ -369,10 +372,7 @@ class Subject(object):
         assert keys is None or 'cvr2' not in keys, 'cvr2 is always included'
 
         if keys is None:
-            if gaussian:
-                keys = ['mu', 'sd', 'amplitude', 'baseline']
-            else:
-                keys = ['mode', 'fwhm', 'amplitude', 'baseline']
+            keys = ['mu', 'sd', 'amplitude', 'baseline']
 
         masker = self.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
 
@@ -384,7 +384,7 @@ class Subject(object):
         else:
             fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-{parameter_key}.{range_n}.optim_space-T1w_pars.nii.gz')
 
-        for parameter_key, range_n in product_(keys, ['wide', 'narrow']):
+        for parameter_key, range_n in product_(keys, ['narrow', 'wide']):
             fn = fn_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id, range_n=range_n)
             pars = pd.Series(masker.transform(fn).squeeze(), name=(parameter_key, range_n))
             parameters.append(pars)
@@ -394,8 +394,11 @@ class Subject(object):
         cvr2_fn = op.join(self.bids_folder, 'derivatives', dir+'.cv', f'sub-{self.subject_id}', f'func', f'sub-{self.subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')
 
         parameters.append(pd.Series(masker.transform(r2_fn).squeeze(), name=('r2', None)))
-        parameters.append(pd.Series(masker.transform(cvr2_fn).squeeze(), name=('cvr2', None)))
-        keys.append(['r2', 'cvr2'])
+        keys.append(['r2'])
+
+        if include_cvr2:
+            parameters.append(pd.Series(masker.transform(cvr2_fn).squeeze(), name=('cvr2', None)))
+            keys.append('cvr2')
 
         parameters =  pd.concat(parameters, axis=1, names=['parameter', 'range']).astype(np.float32)
 

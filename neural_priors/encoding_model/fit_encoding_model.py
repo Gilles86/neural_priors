@@ -32,7 +32,7 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
     sub = Subject(subject, bids_folder=bids_folder)
     paradigm = get_paradigm(sub, model_label, gaussian=gaussian)
 
-    print(paradigm)
+    print(paradigm.describe())
 
     data = sub.get_single_trial_estimates(session=None, smoothed=smoothed)
     masker = sub.get_brain_mask(session=None, epi_space=True, return_masker=True, debug_mask=debug)
@@ -44,7 +44,6 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
     # Fit model
     pars = fit_model(model, paradigm, data, model_label, max_n_iterations=max_n_iterations, gaussian=gaussian)
 
-    print(pars)
     pred = model.predict(parameters=pars, paradigm=paradigm)
     r2 = get_rsq(data, pred)
 
