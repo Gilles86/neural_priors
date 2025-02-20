@@ -25,7 +25,7 @@ def main(roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=True, space='
     os.makedirs(target_dir, exist_ok=True)
 
     subject_ids = get_all_subject_ids()
-    model_labels = list(range(1, 11))
+    model_labels = list(range(1, 12))
     subjects = [Subject(subject_id=subject_id) for subject_id in subject_ids]
     pars = []
 
