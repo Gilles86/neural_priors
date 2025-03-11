@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=nprf_fit_joint_alphagaussian
+#SBATCH --job-name=nprf_fit_joint_alphagaussian_cv
 #SBATCH --ntasks=1
-#SBATCH --time=15:00
+#SBATCH --time=60:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=32G  # Request more memory
-#SBATCH --output=/home/gdehol/logs/nprf_fit_joint_alphagaussian_%A-%a.txt  # Default SLURM log
+#SBATCH --output=/home/gdehol/logs/nprf_fit_joint_alphagaussian_cv_%A-%a.txt  # Default SLURM log
 
 # Load environment
 . $HOME/init_conda.sh
-source activate neaural_priors2
+source activate neural_priors2
 
 # Get participant label and model number
 PARTICIPANT_LABEL=$(printf "%02d" $SLURM_ARRAY_TASK_ID)
@@ -30,6 +30,6 @@ done
 LOGFILE="/home/gdehol/logs/nprf_fit_joint_alphagaussian_${SLURM_ARRAY_JOB_ID}-${SLURM_ARRAY_TASK_ID}_model-${MODEL}_${SMOOTHED_SUFFIX}.txt"
 
 # Run the encoding model fit and redirect output manually
-python $HOME/git/neural_priors/neural_priors/encoding_model/fit_alpha_model.py \
+python $HOME/git/neural_priors/neural_priors/encoding_model/fit_alpha_model_cv.py \
     $PARTICIPANT_LABEL --bids_folder /shares/zne.uzh/gdehol/ds-neuralpriors \
     $SMOOTHED_FLAG --model $MODEL > "$LOGFILE" 2>&1
