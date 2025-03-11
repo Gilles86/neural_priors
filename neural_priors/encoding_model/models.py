@@ -49,8 +49,8 @@ def get_paradigm(sub, model_label, gaussian=True):
 
     return paradigm
 
-def get_model(paradigm, model_label, gaussian=True):
 
+def get_regressors(model_label):
     if model_label == 1:
         regressors = {}
     elif model_label == 2:
@@ -75,6 +75,12 @@ def get_model(paradigm, model_label, gaussian=True):
         regressors = {'mu':'0 + C(range)', 'sd':'0 + C(range)'}
     else:
         raise NotImplementedError(f"Model {model_label} is not implemented")
+
+    return regressors
+
+def get_model(paradigm, model_label, gaussian=True):
+
+    regressors = get_regressors(model_label)
 
     if model_label in [1, 2, 6, 7, 8, 9, 10, 11]:
         model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors)
