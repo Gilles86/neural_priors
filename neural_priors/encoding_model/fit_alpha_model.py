@@ -20,6 +20,11 @@ def get_grids(model_label):
     amplitudes = [1.0]
     baselines = [0.0]
 
+
+    if model_label in [1]:
+        return modes2, sigmas, alphas, amplitudes, baselines
+    if model_label in [2]:
+        return modes1, modes2, sigmas, sigmas, alphas, amplitudes, amplitudes, baselines, baselines
     if model_label in [6]:
         return modes1, modes2, sigmas, alphas, amplitudes, baselines
     elif model_label in [3]:
