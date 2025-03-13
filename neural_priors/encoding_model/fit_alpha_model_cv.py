@@ -62,7 +62,7 @@ def main(subject, smoothed, model_label=4, bids_folder='/data/ds-neuralpriors', 
     
         # # Fit model
 
-        optimizer = ParameterFitter(model, data.astype(np.float32), paradigm.astype(np.float32))
+        optimizer = ParameterFitter(model, train_data.astype(np.float32), train_paradigm.astype(np.float32))
 
         grid = get_grids(model_label)
         print(grid)
@@ -101,8 +101,8 @@ def main(subject, smoothed, model_label=4, bids_folder='/data/ds-neuralpriors', 
             shared_pars=[('alpha_unbounded', 'Intercept')]
         )
 
-        pred = model.predict(parameters=gd_pars, paradigm=paradigm)
-        r2 = get_rsq(data, pred)
+        pred = model.predict(parameters=gd_pars, paradigm=train_paradigm)
+        r2 = get_rsq(train_data, pred)
 
         # Out-of-set predictions
         model.set_paradigm(test_paradigm)
