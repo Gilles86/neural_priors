@@ -56,9 +56,9 @@ def main(subject, smoothed, model_label=4, bids_folder='/data/ds-neuralpriors', 
         regressors = get_regressors(model_label)
         print(regressors)
         if model_label in [3]:
-            model = RegressionAlphaGaussianPRF(paradigm, data, regressors=regressors, baseline_parameter_values={'mu':10})
+            model = RegressionAlphaGaussianPRF(train_paradigm, train_data, regressors=regressors, baseline_parameter_values={'mu':10})
         else:
-            model = RegressionAlphaGaussianPRF(paradigm, data, regressors=regressors)
+            model = RegressionAlphaGaussianPRF(train_paradigm, train_data, regressors=regressors)
     
         # # Fit model
 
@@ -113,7 +113,7 @@ def main(subject, smoothed, model_label=4, bids_folder='/data/ds-neuralpriors', 
             target_fn = op.join(target_dir, f'sub-{subject}_ses-{test_session}_run-{test_run}_desc-r2.optim_space-T1w_pars.nii.gz')
             masker.inverse_transform(r2).to_filename(target_fn)
 
-            condition_specific_pars = get_conditionspecific_parameters(model_label, model, pars, gaussian=gaussian)
+            condition_specific_pars = get_conditionspecific_parameters(model_label, model, gd_pars, gaussian=True)
 
             for range_n, values in condition_specific_pars.groupby('range'):
                 for par, value in values.T.iterrows():
