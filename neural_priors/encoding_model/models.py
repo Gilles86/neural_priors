@@ -302,7 +302,7 @@ class AlphaDeltaModel(AlphaGaussianPRF):
         lower_bound_range = parameters[..., 4]
 
         mu_narrow = parameters[..., 0]
-        mu_wide = ((mu_narrow - lower_bound_range) * delta_wide) + lower_bound_range
+        mu_wide = tf.clip_by_value(((mu_narrow - lower_bound_range) * delta_wide) + lower_bound_range, 1e-6, float('inf'))
 
         mu = tf.where(tf.transpose(wide_condition), mu_wide, mu_narrow)[tf.newaxis, ...]
 
