@@ -8,8 +8,8 @@ import numpy as np
 from braincoder.utils import get_rsq
 from nilearn import image
 import pandas as pd
-from models import get_regressors, get_paradigm, get_conditionspecific_parameters
-from fit_alpha_model import get_grids
+from models import get_paradigm, get_conditionspecific_parameters
+from fit_alpha_model import get_model, fit_model
 
 def main(subject, smoothed, model_label=4, bids_folder='/data/ds-neuralpriors', debug=False, roi='NPCr', store_cv_parameters=False):
     max_n_iterations = 100 if debug else 1000
@@ -37,7 +37,7 @@ def main(subject, smoothed, model_label=4, bids_folder='/data/ds-neuralpriors', 
     paradigm.index = paradigm.index.swaplevel('run', 'run2')
     paradigm = paradigm.astype(np.float32).droplevel(['run', 'trial_nr', 'subject'])    
 
-    print(paradigm.describe())
+
 
     data = sub.get_single_trial_estimates(session=None, smoothed=smoothed)
     masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
@@ -52,60 +52,66 @@ def main(subject, smoothed, model_label=4, bids_folder='/data/ds-neuralpriors', 
         test_data, test_paradigm = data.loc[(test_session, test_run)].copy().astype(np.float32), paradigm.loc[(test_session, test_run)].copy().astype(np.float32)
         train_data, train_paradigm = data.drop((test_session, test_run)).copy(), paradigm.drop((test_session, test_run)).copy()
 
-        # Get model
-        regressors = get_regressors(model_label)
-        print(regressors)
-        if model_label in [3]:
-            model = RegressionAlphaGaussianPRF(train_paradigm, train_data, regressors=regressors, baseline_parameter_values={'mu':10})
-        else:
-            model = RegressionAlphaGaussianPRF(train_paradigm, train_data, regressors=regressors)
+        # # Get model
+        # regressors = get_regressors(model_label)
+        # print(regressors)
+        # if model_label in [3]:
+        #     model = RegressionAlphaGaussianPRF(train_paradigm, train_data, regressors=regressors, baseline_parameter_values={'mu':10})
+        # else:
+        #     model = RegressionAlphaGaussianPRF(train_paradigm, train_data, regressors=regressors)
     
-        # # Fit model
+        # # # Fit model
 
-        optimizer = ParameterFitter(model, train_data.astype(np.float32), train_paradigm.astype(np.float32))
+        # optimizer = ParameterFitter(model, data.astype(np.float32), paradigm.astype(np.float32))
 
-        grid = get_grids(model_label)
-        print(grid)
+        # grid = get_grids(model_label)
+        # print(grid)
 
-        grid_pars = optimizer.fit_grid(*grid)
+        # grid_pars = optimizer.fit_grid(*grid)
 
-        fixed_pars = list(model.parameter_labels)
-        fixed_mapping = {
-            (1, 3, 4, 6, 8, 9, 10, 11): [('amplitude_unbounded', 'Intercept'), ('baseline_unbounded', 'Intercept')],
-            (2, 5, 7): [
-                ('amplitude_unbounded', 'C(range)[0.0]'),
-                ('baseline_unbounded', 'C(range)[0.0]'),
-                ('amplitude_unbounded', 'C(range)[1.0]'),
-                ('baseline_unbounded', 'C(range)[1.0]'),
-            ]
-        }
+        # fixed_pars = list(model.parameter_labels)
+        # fixed_mapping = {
+        #     (1, 3, 4, 6, 8, 9, 10, 11): [('amplitude_unbounded', 'Intercept'), ('baseline_unbounded', 'Intercept')],
+        #     (2, 5, 7): [
+        #         ('amplitude_unbounded', 'C(range)[0.0]'),
+        #         ('baseline_unbounded', 'C(range)[0.0]'),
+        #         ('amplitude_unbounded', 'C(range)[1.0]'),
+        #         ('baseline_unbounded', 'C(range)[1.0]'),
+        #     ]
+        # }
 
-        for keys, to_remove in fixed_mapping.items():
-            if model_label in keys:
-                for item in to_remove:
-                    fixed_pars.pop(fixed_pars.index(item))
+        # for keys, to_remove in fixed_mapping.items():
+        #     if model_label in keys:
+        #         for item in to_remove:
+        #             fixed_pars.pop(fixed_pars.index(item))
 
-        # Fit one (only baseline/amplitude)
-        gd_pars = optimizer.fit(
-            init_pars=grid_pars, learning_rate=.05, store_intermediate_parameters=False,
-            max_n_iterations=max_n_iterations, fixed_pars=fixed_pars, r2_atol=0.001,
-            shared_pars=[('alpha_unbounded', 'Intercept')]
-        )
+        # # Fit one (only baseline/amplitude)
+        # gd_pars = optimizer.fit(
+        #     init_pars=grid_pars, learning_rate=.05, store_intermediate_parameters=False,
+        #     max_n_iterations=max_n_iterations, fixed_pars=fixed_pars, r2_atol=0.001,
+        #     shared_pars=[('alpha_unbounded', 'Intercept')]
+        # )
 
-        print(gd_pars)
+        # print(gd_pars)
 
-        # Fit two
-        gd_pars = optimizer.fit(
-            init_pars=optimizer.estimated_parameters, learning_rate=.01, store_intermediate_parameters=False,
-            max_n_iterations=max_n_iterations, r2_atol=0.00001,
-            shared_pars=[('alpha_unbounded', 'Intercept')]
-        )
+        # # Fit two
+        # gd_pars = optimizer.fit(
+        #     init_pars=optimizer.estimated_parameters, learning_rate=.01, store_intermediate_parameters=False,
+        #     max_n_iterations=max_n_iterations, r2_atol=0.00001,
+        #     shared_pars=[('alpha_unbounded', 'Intercept')]
+        # )
+
+        model = get_model(model_label, train_paradigm, train_data)
+
+        gd_pars = fit_model(model_label, model, train_paradigm, train_data, max_n_iterations=max_n_iterations)
 
         pred = model.predict(parameters=gd_pars, paradigm=train_paradigm)
         r2 = get_rsq(train_data, pred)
 
         # Out-of-set predictions
-        model.set_paradigm(test_paradigm)
+        if model_label not in [12, 13]:
+            model.set_paradigm(test_paradigm)
+
         pred = model.predict(parameters=gd_pars, paradigm=test_paradigm)
         cvr2 = get_rsq(test_data, pred)
 
