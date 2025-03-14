@@ -1,9 +1,10 @@
 from neural_priors.utils.data import Subject
-from braincoder.models import RegressionGaussianPRF
+from braincoder.models import RegressionGaussianPRF, GaussianPRF
 from braincoder.optimize import ParameterFitter
 import os.path as op
 import numpy as np
 import pandas as pd
+from braincoder.utils.math import norm
 from braincoder.models import AlphaGaussianPRF
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -37,7 +38,7 @@ def get_paradigm(sub, model_label, gaussian=True):
 
         if not gaussian:
             paradigm['x'] = np.log(paradigm['x'])
-    elif model_label in [12, 13]:
+    elif model_label in range(12, 18):
         paradigm = behavior[['n', 'range']].rename(columns={'n':'x'})
         paradigm['range'] = paradigm['range'].map({'narrow':False, 'wide':True})
         paradigm = paradigm[['x', 'range']]
@@ -81,7 +82,7 @@ def get_regressors(model_label):
         regressors = {'sd':'0 + beta'}
     elif model_label == 11:
         regressors = {'mu':'0 + C(range)', 'sd':'0 + C(range)'}
-    elif model_label in [12, 13]:
+    elif model_label in range(12, 18):
         return None
     else:
         raise NotImplementedError(f"Model {model_label} is not implemented")
@@ -99,6 +100,9 @@ def get_model(paradigm, model_label, gaussian=True):
             model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors, baseline_parameter_values={'mu':10})
         else:
             model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors, baseline_parameter_values={'mu':np.log(10)})
+
+    elif model_label in [12, 13]:
+        model = GaussianDeltaModel(paradigm=paradigm)
 
     return model
 
@@ -120,7 +124,6 @@ def get_parameter_grids(model_label, gaussian=True):
         modes2 = make_grid(11, 39, int(29/2.), not gaussian)
         # sigmas = make_grid(3, 30, int(15/2.), not gaussian)
         sigmas = np.linspace(2.5, 15, 15) if gaussian else np.linspace(.1, 2., 10)
-        return modes1, modes2, sigmas, amplitudes, baselines
 
     # Standard mode/sigma definitions for other models
     model_params = {
@@ -129,6 +132,7 @@ def get_parameter_grids(model_label, gaussian=True):
         (5,): (0, 15, 16, 3, 30, 15),  # Special case for log-space
         (3, 4,):   (0, 15, 41, 3, 15, 30),  # Special case for log-space
         (6,10):   (5, 45, 16, 3, 15, 15),
+        (12, 13):   (10, 25, 15, 3, 15, 15),
     }
 
     for labels, (mode_min, mode_max, mode_steps, sigma_min, sigma_max, sigma_steps) in model_params.items():
@@ -207,7 +211,7 @@ def get_conditionspecific_parameters(model_label, model, estimated_parameters, g
     print("Getting parameters with range_increase", range_increase)
 
 
-    if model_label in [12, 13]:
+    if model_label in range(12,18):
 
         pars = pd.DataFrame()
 
@@ -311,3 +315,58 @@ class AlphaDeltaModel(AlphaGaussianPRF):
                     parameters[:, tf.newaxis, :, 1],
                     parameters[:, tf.newaxis, :, 2]) * \
             parameters[:, tf.newaxis, :, 5] + parameters[:, tf.newaxis, :, 6]
+
+class GaussianDeltaModel(GaussianPRF):
+
+    parameter_labels = ['mu_narrow', 'sd', 'delta_wide', 'lower_bound_range', 'amplitude', 'baseline']
+
+    def __init__(self, paradigm=None, data=None, parameters=None,
+                 weights=None, omega=None, allow_neg_amplitudes=False, verbosity=logging.INFO,
+                 model_stimulus_amplitude=False,
+                 **kwargs):
+
+        if allow_neg_amplitudes:
+            raise NotImplementedError("Negative amplitudes are not allowed for AlphaDeltaModel")
+
+        super().__init__(paradigm=paradigm, data=data, parameters=parameters,
+                         weights=weights, omega=omega, allow_neg_amplitudes=allow_neg_amplitudes,
+                          verbosity=verbosity, model_stimulus_amplitude=model_stimulus_amplitude,
+                          **kwargs)
+    @tf.function
+    def _transform_parameters_forward2(self, parameters):
+        return tf.concat([tf.math.softplus(parameters[:, 0][:, tf.newaxis]),
+                          tf.math.softplus(parameters[:, 1][:, tf.newaxis]),
+                          parameters[:, 2][:, tf.newaxis],
+                          parameters[:, 3][:, tf.newaxis],
+                          tf.math.softplus(parameters[:, 4][:, tf.newaxis]), # Amplitude
+                          parameters[:, 5][:, tf.newaxis]], axis=1)
+    
+    @tf.function
+    def _transform_parameters_backward2(self, parameters):
+        return tf.concat([tfp.math.softplus_inverse(parameters[:, 0][:, tf.newaxis]),
+                          tfp.math.softplus_inverse(
+                              parameters[:, 1][:, tf.newaxis]),
+                          parameters[:, 2][:, tf.newaxis],
+                          parameters[:, 3][:, tf.newaxis],
+                          tfp.math.softplus_inverse(parameters[:, 4][:, tf.newaxis]),
+                          parameters[:, 5][:, tf.newaxis]], axis=1)
+
+    @tf.function
+    def _basis_predictions_without_amplitude(self, paradigm, parameters):
+
+        # Extract stimulus feature values
+        x = paradigm[..., tf.newaxis, 0]
+        wide_condition = tf.cast(paradigm[..., 1], tf.bool)  # Ensure this is a tensor
+
+        delta_wide = parameters[..., 2]
+        lower_bound_range = parameters[..., 3]
+
+        mu_narrow = parameters[..., 0]
+        mu_wide = tf.clip_by_value(((mu_narrow - lower_bound_range) * delta_wide) + lower_bound_range, 1e-6, float('inf'))
+
+        mu = tf.where(tf.transpose(wide_condition), mu_wide, mu_narrow)[tf.newaxis, ...]
+
+        return norm(x,
+                    mu,
+                    parameters[:, tf.newaxis, :, 1]) * \
+            parameters[:, tf.newaxis, :, 4] + parameters[:, tf.newaxis, :, 5]

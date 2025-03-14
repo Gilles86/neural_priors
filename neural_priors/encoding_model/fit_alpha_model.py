@@ -9,6 +9,11 @@ from models import get_regressors, get_paradigm, get_conditionspecific_parameter
 from braincoder.models import RegressionAlphaGaussianPRF
 from braincoder.optimize import ParameterFitter
 
+# 14: gaussian / delta wide
+# 15: log / delta wide
+# 16: gaussian / delta wide / lower bound
+# 17: log / delta wide / lower bound
+
 
 def get_grids(model_label):
 
@@ -16,7 +21,12 @@ def get_grids(model_label):
     modes1 = np.arange(10, 25)
     modes2 = np.arange(10, 40)
     sigmas = np.linspace(.5, 3, 10)
-    alphas = [0.01]
+    
+    if model_label in [14, 16]:
+        alphas = [1.0]
+    else:
+        alphas = [0.0001]
+
     amplitudes = [1.0]
     baselines = [0.0]
 
@@ -31,9 +41,7 @@ def get_grids(model_label):
         return modes1, modes2, sigmas, alphas, amplitudes, baselines
     elif model_label in [3]:
         return modes_beta, sigmas, alphas, amplitudes, baselines
-    elif model_label in [12]:
-        return modes1, sigmas, alphas, delta_wides, lower_bounds, amplitudes, baselines
-    elif model_label in [13]:
+    elif model_label in range(12, 18):
         return modes1, sigmas, alphas, delta_wides, lower_bounds, amplitudes, baselines
     else:
         raise NotImplementedError(f"Model {model_label} is not implemented")
@@ -45,7 +53,7 @@ def get_model(model_label, paradigm, data):
         return RegressionAlphaGaussianPRF(paradigm, data, regressors=regressors, baseline_parameter_values={'mu':10})
     elif model_label in [1,2,6]:
         return RegressionAlphaGaussianPRF(paradigm, data, regressors=regressors)
-    elif model_label in [12, 13]:
+    elif model_label in range(12, 18):
         return AlphaDeltaModel(paradigm, data)
 
     raise NotImplementedError(f"Model {model_label} is not implemented")
@@ -67,7 +75,7 @@ def fit_model(model_label, model, paradigm, data, max_n_iterations=1000):
             ('amplitude_unbounded', 'C(range)[1.0]'),
             ('baseline_unbounded', 'C(range)[1.0]'),
         ],
-        (12, 13): ['amplitude', 'baseline']
+        (12, 13, 14, 15,16,17): ['amplitude', 'baseline']
     }
 
     for keys, to_remove in fixed_mapping.items():
@@ -77,10 +85,10 @@ def fit_model(model_label, model, paradigm, data, max_n_iterations=1000):
 
     if model_label in list(range(1, 12)):
         shared_pars = [('alpha_unbounded', 'Intercept')]
-    elif model_label in [12]:
-        shared_pars = ['alpha', 'delta_wide']
-    elif model_label in [13]:
-        shared_pars = ['alpha', 'delta_wide', 'lower_bound_range']
+    elif model_label in [12, 14, 15]:
+        shared_pars = ['delta_wide']
+    elif model_label in [13, 16, 17]:
+        shared_pars = ['delta_wide', 'lower_bound_range']
     else:
         raise NotImplementedError(f"Model {model_label} is not implemented")
 
@@ -94,8 +102,14 @@ def fit_model(model_label, model, paradigm, data, max_n_iterations=1000):
 
     fixed_pars2 = None
 
-    if model_label == 12:
-        fixed_pars2 = ['lower_bound_range']
+    if model_label in range(12, 18):
+        fixed_pars2 = []
+
+    if model_label in [12, 14, 15]:
+        fixed_pars2 += ['lower_bound_range']
+
+    if model_label in [14, 15, 16, 17]:
+        fixed_pars2 += ['alpha']
 
     gd_pars = optimizer.fit(
         init_pars=optimizer.estimated_parameters, learning_rate=.01, store_intermediate_parameters=False,
