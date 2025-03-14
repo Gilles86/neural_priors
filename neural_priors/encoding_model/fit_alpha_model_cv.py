@@ -52,55 +52,6 @@ def main(subject, smoothed, model_label=4, bids_folder='/data/ds-neuralpriors', 
         test_data, test_paradigm = data.loc[(test_session, test_run)].copy().astype(np.float32), paradigm.loc[(test_session, test_run)].copy().astype(np.float32)
         train_data, train_paradigm = data.drop((test_session, test_run)).copy(), paradigm.drop((test_session, test_run)).copy()
 
-        # # Get model
-        # regressors = get_regressors(model_label)
-        # print(regressors)
-        # if model_label in [3]:
-        #     model = RegressionAlphaGaussianPRF(train_paradigm, train_data, regressors=regressors, baseline_parameter_values={'mu':10})
-        # else:
-        #     model = RegressionAlphaGaussianPRF(train_paradigm, train_data, regressors=regressors)
-    
-        # # # Fit model
-
-        # optimizer = ParameterFitter(model, data.astype(np.float32), paradigm.astype(np.float32))
-
-        # grid = get_grids(model_label)
-        # print(grid)
-
-        # grid_pars = optimizer.fit_grid(*grid)
-
-        # fixed_pars = list(model.parameter_labels)
-        # fixed_mapping = {
-        #     (1, 3, 4, 6, 8, 9, 10, 11): [('amplitude_unbounded', 'Intercept'), ('baseline_unbounded', 'Intercept')],
-        #     (2, 5, 7): [
-        #         ('amplitude_unbounded', 'C(range)[0.0]'),
-        #         ('baseline_unbounded', 'C(range)[0.0]'),
-        #         ('amplitude_unbounded', 'C(range)[1.0]'),
-        #         ('baseline_unbounded', 'C(range)[1.0]'),
-        #     ]
-        # }
-
-        # for keys, to_remove in fixed_mapping.items():
-        #     if model_label in keys:
-        #         for item in to_remove:
-        #             fixed_pars.pop(fixed_pars.index(item))
-
-        # # Fit one (only baseline/amplitude)
-        # gd_pars = optimizer.fit(
-        #     init_pars=grid_pars, learning_rate=.05, store_intermediate_parameters=False,
-        #     max_n_iterations=max_n_iterations, fixed_pars=fixed_pars, r2_atol=0.001,
-        #     shared_pars=[('alpha_unbounded', 'Intercept')]
-        # )
-
-        # print(gd_pars)
-
-        # # Fit two
-        # gd_pars = optimizer.fit(
-        #     init_pars=optimizer.estimated_parameters, learning_rate=.01, store_intermediate_parameters=False,
-        #     max_n_iterations=max_n_iterations, r2_atol=0.00001,
-        #     shared_pars=[('alpha_unbounded', 'Intercept')]
-        # )
-
         model = get_model(model_label, train_paradigm, train_data)
 
         gd_pars = fit_model(model_label, model, train_paradigm, train_data, max_n_iterations=max_n_iterations)
