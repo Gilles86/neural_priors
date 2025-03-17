@@ -93,7 +93,7 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
 
 def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', gaussian=True, debug=False, roi='NPCr'):
 
-    max_n_iterations = 100 if debug else 1000
+    max_n_iterations = 100 if debug else 2000
 
     # Create target folder
     key = f'model{model_label}'
