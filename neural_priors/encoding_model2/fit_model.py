@@ -45,7 +45,7 @@ def get_grid(model_label):
 
     if model_label in [0]:
         delta_wides = [1.0]
-    elif model_label in [1, 4]:
+    elif model_label in [1, 4, 7]:
         delta_wides = [2.0]
     elif model_label in [2, 3, 5, 6, 8]:
         delta_wides = [.5, 1.0, 1.5, 2.0, 2.5]
