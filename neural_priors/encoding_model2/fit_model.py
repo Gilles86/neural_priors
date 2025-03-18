@@ -17,11 +17,14 @@ from models import AlphaDeltaModel, get_paradigm
 # model 3: delta_wide is free and different for each voxel
 # model 4: delta_wide is 2 and identity below 10
 # model 5: delta_wide is fitted, same across voxels, but identity below 10
+# Model 6: Like model 3, gamma free
+# Model 7: Like model 4, gamma free
+# Model 8: Like model 5, gamma free
 
 
 def get_model(model_label):
 
-    if model_label in [4, 5]:
+    if model_label in [4, 5, 7, 8]:
         model = AlphaDeltaModel(identity_below_range=True)
     else:
         model = AlphaDeltaModel()
@@ -32,7 +35,11 @@ def get_grid(model_label):
 
     modes = np.linspace(5, 45, 41)
     sds = np.linspace(np.log(2), np.log(30), 30)
-    alphas = np.array([1e-4], dtype=np.float32)
+    if model_label in range(6, 9):
+        alphas = np.linspace(-1., 1., 5)
+    else:
+        alphas = np.array([1e-4], dtype=np.float32)
+
     intersection_point = [10.0]
     amplitudes = np.array([1.], dtype=np.float32)
     baselines = np.array([0], dtype=np.float32)
@@ -41,7 +48,7 @@ def get_grid(model_label):
         delta_wides = [1.0]
     elif model_label in [1, 4]:
         delta_wides = [2.0]
-    elif model_label in [2, 3, 5]:
+    elif model_label in [2, 3, 5, 6, 8]:
         delta_wides = [.5, 1.0, 1.5, 2.0, 2.5]
 
     return modes, sds, alphas, delta_wides, intersection_point,  amplitudes, baselines
@@ -60,11 +67,16 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
     fixed_pars = []
     shared_pars = []
 
-    fixed_pars += ['alpha', 'lower_bound_range']
+    fixed_pars += ['lower_bound_range']
+
+    if model_label in range(0, 6):
+        fixed_pars += ['alpha']
+    else:
+        shared_pars += ['alpha']
 
     if model_label in [0, 1, 4]:
         fixed_pars += ['delta_wide']
-    elif model_label in [2, 5]:
+    elif model_label in [2, 5, 8]:
         shared_pars += ['delta_wide']
 
     gd_pars = fitter.fit(max_n_iterations=max_n_iterations, init_pars=grid_pars,
@@ -80,7 +92,7 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
     pars[('mu', 'narrow')] = estimated_parameters['mu_narrow']
     pars[('mu', 'wide')] = estimated_parameters['delta_wide'] * (estimated_parameters['mu_narrow'] - estimated_parameters['lower_bound_range']) + estimated_parameters['lower_bound_range']
 
-    if model_label in [4, 5]:
+    if model_label in [4, 5, 7, 8]:
         pars[('mu', 'wide')] = pars[('mu', 'wide')].where(pars[('mu', 'wide')] > 10, pars[('mu', 'narrow')])
 
     for p in ['sd', 'amplitude', 'baseline', 'alpha', 'delta_wide', 'lower_bound_range']:
