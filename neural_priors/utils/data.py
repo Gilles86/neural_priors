@@ -341,9 +341,15 @@ class Subject(object):
             keys=None,
             roi=None,
             return_image=False,
-            gaussian=True,
+            sensory_space='gaussian',
             include_cvr2=True,
+            gaussian=None,
             model_label=1):
+
+        if gaussian is True:
+            sensory_space = 'gaussian'
+        elif gaussian is False:
+            sensory_space = 'logspace'
 
         if (session is not None) and (not cross_validated):
             raise ValueError('Session must be None')
@@ -352,10 +358,14 @@ class Subject(object):
 
         dir += f'.model{model_label}'
         
-        if gaussian:
+        if sensory_space == 'natural':
             dir += '.gaussian'
-        else:
+        elif sensory_space == 'log':
             dir += '.logspace'
+        elif sensory_space == 'alpha':
+            dir += '.alpha'
+        else:
+            raise ValueError(f'Unknown sensory space: {sensory_space}')
 
         if smoothed:
             dir += '.smoothed'
@@ -372,7 +382,14 @@ class Subject(object):
         assert keys is None or 'cvr2' not in keys, 'cvr2 is always included'
 
         if keys is None:
-            keys = ['mu', 'sd', 'amplitude', 'baseline']
+            if sensory_space in ['natural', 'log']:
+                keys = ['mu', 'sd', 'amplitude', 'baseline']
+            else:
+                keys = ['mu', 'sd', 'alpha', 'amplitude', 'baseline']
+
+                if model_label in range(12, 18):
+                    keys.append('delta_wide')
+                    keys.append('lower_bound_range')
 
         masker = self.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
 
@@ -406,6 +423,37 @@ class Subject(object):
             return masker.inverse_transform(parameters.T)
 
         return parameters
+
+    def get_prf_parameters_volume2(self, model_label, smoothed=True, roi=None):
+
+        par_keys = ['mu', 'sd', 'alpha', 'delta_wide', 'lower_bound_range', 'amplitude', 'baseline']
+
+        # Create target folder
+        key = f'model{model_label}'
+        cv_key = key + '.cv'
+
+        if smoothed:
+            key += '.smoothed'
+            cv_key += '.smoothed'
+
+        masker = self.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+
+        target_dir = op.join(self.bids_folder, 'derivatives', 'encoding_models2', key, f'sub-{self.subject_id}', 'func')
+
+        pars = []
+
+        for par, condition in product_(par_keys, ['narrow', 'wide']):
+            fn = op.join(target_dir, f'sub-{self.subject_id}_desc-{par}.{condition}.optim_space-T1w_pars.nii.gz')
+
+            pars.append(pd.Series(masker.transform(fn).squeeze(), name=(par, condition)))
+
+        pars.append(pd.Series(masker.transform(op.join(target_dir, f'sub-{self.subject_id}_desc-r2.optim_space-T1w_pars.nii.gz')).squeeze(), name=('r2', None)))
+
+        cv_dir = op.join(self.bids_folder, 'derivatives', 'encoding_models2',  cv_key, f'sub-{self.subject_id}', 'func')
+
+        pars.append(pd.Series(masker.transform(op.join(cv_dir, f'sub-{self.subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')).squeeze(), name=('cvr2', None)))
+
+        return pd.concat(pars, axis=1, names=['parameter', 'range'])
 
     def get_surf_info(self):
         info = {'L':{}, 'R':{}}
