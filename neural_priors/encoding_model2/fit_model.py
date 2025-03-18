@@ -73,7 +73,7 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
     else:
         shared_pars += ['alpha']
 
-    if model_label in [0, 1, 4]:
+    if model_label in [0, 1, 4, 7]:
         fixed_pars += ['delta_wide']
     elif model_label in [2, 5, 8]:
         shared_pars += ['delta_wide']
