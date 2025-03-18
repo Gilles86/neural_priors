@@ -11,7 +11,8 @@ from braincoder.optimize import ParameterFitter
 from braincoder.models import RegressionGaussianPRF
 from fit_model import get_paradigm, get_model, fit_model
 
-def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', gaussian=True, debug=False, roi='NPCr'):
+def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', gaussian=True, debug=False, roi='NPCr',
+         fit_responses=False):
 
     max_n_iterations = 100 if debug else 2000
 
@@ -21,6 +22,9 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
     if smoothed:
         key += '.smoothed'
 
+    if fit_responses:
+        key += '.fit_responses'
+
     target_dir = op.join(bids_folder, 'derivatives', 'encoding_models2', key, f'sub-{subject}', 'func')
 
     if not op.exists(target_dir):
@@ -28,7 +32,7 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
 
     # Get paradigm/data/model
     sub = Subject(subject, bids_folder=bids_folder)
-    paradigm = get_paradigm(sub, model_label, gaussian=gaussian)
+    paradigm = get_paradigm(sub, fit_responses=fit_responses)
     paradigm = paradigm.set_index(pd.Index((paradigm.index.get_level_values('run') - 1) % 4 + 1, name='run2'), append=True)
     paradigm.index = paradigm.index.swaplevel('run', 'run2')
     paradigm = paradigm.astype(np.float32).droplevel(['run', 'trial_nr', 'subject'])    
@@ -71,7 +75,9 @@ if __name__ == '__main__':
     parser.add_argument('--model_label', default=1, type=int)
     parser.add_argument('--bids_folder', default='/data/ds-neuralpriors')
     parser.add_argument('--smoothed', action='store_true')
+    parser.add_argument('--fit_responses', action='store_true')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
-    main(args.subject, model_label=args.model_label, smoothed=args.smoothed, bids_folder=args.bids_folder, debug=args.debug)
+    main(args.subject, model_label=args.model_label, smoothed=args.smoothed, bids_folder=args.bids_folder, debug=args.debug,
+         fit_responses=args.fit_responses)
