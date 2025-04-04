@@ -3,6 +3,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 import numpy as np
 import logging
+from braincoder.stimuli import Stimulus
 
 class AlphaDeltaModel(AlphaGaussianPRF):
 
@@ -63,16 +64,20 @@ class AlphaDeltaModel(AlphaGaussianPRF):
             return tf.exp(exponent)
 
         # Extract stimulus feature values
+
+        # Extract stimulus feature values
+        # n_batches x n_timepoints x n_voxels (null)
         x = paradigm[..., tf.newaxis, 0]
-        wide_condition = tf.cast(paradigm[..., 1], tf.bool)  # Ensure this is a tensor
+        wide_condition = tf.cast(paradigm[..., tf.newaxis, 1], tf.bool)  # Ensure this is a tensor
 
-        delta_wide = parameters[..., 3]
-        lower_bound_range = parameters[..., 4]
+        # n_batches x n_timepoints (null) x n_voxels
+        delta_wide = parameters[:, tf.newaxis, :, 3]
+        lower_bound_range = parameters[:, tf.newaxis, :, 4]
 
-        mu_narrow = parameters[..., 0]
+        mu_narrow = parameters[:, tf.newaxis, :, 0]
         mu_wide = tf.clip_by_value(((mu_narrow - lower_bound_range) * delta_wide) + lower_bound_range, 1e-6, float('inf'))
 
-        mu = tf.where(tf.transpose(wide_condition), mu_wide, mu_narrow)[tf.newaxis, ...]
+        mu = tf.where(wide_condition, mu_wide, mu_narrow)
 
         if self.identity_below_range:
             mu = tf.where(mu < lower_bound_range, mu_narrow, mu)
@@ -83,13 +88,5 @@ class AlphaDeltaModel(AlphaGaussianPRF):
                     parameters[:, tf.newaxis, :, 2]) * \
             parameters[:, tf.newaxis, :, 5] + parameters[:, tf.newaxis, :, 6]
 
-
-def get_paradigm(sub, model_label, gaussian=True):
-    behavior = sub.get_behavioral_data(session=None)
-
-    paradigm = behavior[['n', 'range']].rename(columns={'n':'x'})
-    paradigm['range'] = paradigm['range'].map({'narrow':False, 'wide':True})
-    paradigm = paradigm[['x', 'range']]
-    paradigm = paradigm.astype(np.float32)
-
-    return paradigm
+    def _get_stimulus(self, **kwargs):
+        return Stimulus(n_dimensions=2)
