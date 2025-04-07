@@ -58,8 +58,6 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
     fitter = ParameterFitter(model, data, paradigm)
     grid = get_grid(model_label)
 
-    print(grid)
-
     grid_pars = fitter.fit_grid(*grid, use_correlation_cost=True)
     grid_pars = fitter.refine_baseline_and_amplitude(grid_pars)
 
@@ -83,6 +81,45 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
 
     return gd_pars
 
+def fit_model_cv(data, paradigm, model_label, max_n_iterations=2000):
+    """
+    Perform cross-validation by splitting the data based on 'run2'.
+
+    Parameters:
+    - data: pd.DataFrame, the data to be used for cross-validation.
+    - paradigm: pd.DataFrame, the paradigm associated with the data.
+    - model_label: int, the label of the model to be used.
+    - max_n_iterations: int, maximum number of iterations for model fitting.
+
+    Returns:
+    - mean_cvr2: pd.Series, mean cross-validated R^2 for each voxel.
+    """
+    all_cvr2 = []
+
+    # Cross-validation loop
+    for (test_session, test_run), _ in paradigm.groupby(level=['session', 'run2']):
+        test_data = data.loc[(test_session, test_run)].copy().astype(np.float32)
+        train_data = data.drop((test_session, test_run)).copy()
+        test_paradigm = paradigm.loc[(test_session, test_run)].copy().astype(np.float32)
+        train_paradigm = paradigm.drop((test_session, test_run)).copy()
+
+        # Get model
+        model = get_model(model_label)
+
+        # Fit model on training data
+        gd_pars = fit_model(model_label, model, train_data, train_paradigm, max_n_iterations=max_n_iterations)
+
+        # Predict on test data
+        test_pred = model.predict(parameters=gd_pars, paradigm=test_paradigm)
+        cv_r2 = get_rsq(test_data, test_pred)
+
+        all_cvr2.append(cv_r2)
+
+    # Aggregate results
+    all_cvr2 = pd.concat(all_cvr2, axis=1)
+    mean_cvr2 = all_cvr2.mean(axis=1)
+
+    return mean_cvr2
 
 def get_conditionspecific_parameters(model_label, estimated_parameters):
     
@@ -156,8 +193,6 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
     masker.inverse_transform(r2).to_filename(target_fn)
 
     pars = get_conditionspecific_parameters(model_label, gd_pars)
-
-    print(pars.unstack('range'))
 
     for range_n, values in pars.groupby('range'):
         for par, value in values.T.iterrows():
