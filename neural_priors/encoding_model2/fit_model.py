@@ -48,7 +48,7 @@ def get_grid(model_label):
     elif model_label in [1, 4, 7]:
         delta_wides = [2.0]
     elif model_label in [2, 3, 5, 6, 8]:
-        delta_wides = [.5, 1.0, 1.5, 2.0, 2.5]
+        delta_wides = np.linspace(.3, 3., 10)
 
     return modes, sds, alphas, delta_wides, intersection_point,  amplitudes, baselines
 
@@ -66,7 +66,8 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
     fixed_pars = []
     shared_pars = []
 
-    fixed_pars += ['lower_bound_range']
+    if model_label not in [3, 6]:
+        fixed_pars += ['lower_bound_range']
 
     if model_label in range(0, 6):
         fixed_pars += ['alpha']
