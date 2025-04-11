@@ -511,6 +511,43 @@ class Subject(object):
 
         return pd.concat(parameters, axis=1, keys=parameter_keys, names=['parameter'])
 
+    def get_prf_parameters_surf2(self, model_label, smoothed=False, hemi=None, space='fsnative', fit_responses=False):
+
+        parameter_keys = ['r2', 'cvr2', 'mu.narrow', 'mu.wide']
+
+        if hemi is None:
+            prf_l = self.get_prf_parameters_surf2(model_label, smoothed, hemi='L', space=space)
+            prf_r = self.get_prf_parameters_surf2(model_label, smoothed, hemi='R', space=space)
+            
+            return pd.concat((prf_l, prf_r), axis=0, 
+                    keys=pd.Index(['L', 'R'], name='hemi'))
+
+        # Find target folder
+        key = f'model{model_label}'
+
+        if smoothed:
+            key += '.smoothed'
+
+        if fit_responses:
+            key += '.fit_responses'
+
+        dir = op.join(self.bids_folder, 'derivatives', 'encoding_models2', key, f'sub-{self.subject_id}', 'func')
+
+        parameters = []
+
+        fn_template = op.join(dir, 'sub-{subject_id}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
+
+        for parameter_key in parameter_keys:
+
+            fn = fn_template.format(parameter_key=parameter_key, subject_id=self.subject_id, hemi=hemi, space=space)
+
+            pars = pd.Series(surface.load_surf_data(fn))
+            pars.index.name = 'vertex'
+
+            parameters.append(pars)
+
+        return pd.concat(parameters, axis=1, keys=parameter_keys, names=['parameter'])
+
     def get_t1w(self):
 
         if self.get_sessions() is [1, 2]:
