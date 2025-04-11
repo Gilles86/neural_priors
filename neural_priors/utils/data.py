@@ -424,7 +424,7 @@ class Subject(object):
 
         return parameters
 
-    def get_prf_parameters_volume2(self, model_label, smoothed=True, roi=None):
+    def get_prf_parameters_volume2(self, model_label, smoothed=True, roi=None, response_fit=False, return_image=False):
 
         par_keys = ['mu', 'sd', 'alpha', 'delta_wide', 'lower_bound_range', 'amplitude', 'baseline']
 
@@ -435,6 +435,10 @@ class Subject(object):
         if smoothed:
             key += '.smoothed'
             cv_key += '.smoothed'
+
+        if response_fit:
+            key += '.fit_responses'
+            cv_key += '.fit_responses'
 
         masker = self.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
 
@@ -453,7 +457,13 @@ class Subject(object):
 
         pars.append(pd.Series(masker.transform(op.join(cv_dir, f'sub-{self.subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')).squeeze(), name=('cvr2', None)))
 
-        return pd.concat(pars, axis=1, names=['parameter', 'range'])
+        pars = pd.concat(pars, axis=1, names=['parameter', 'range'])
+
+        if return_image:
+            return masker.inverse_transform(pars.T)
+        else:
+            return pars
+
 
     def get_surf_info(self):
         info = {'L':{}, 'R':{}}
