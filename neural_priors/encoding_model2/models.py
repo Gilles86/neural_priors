@@ -7,25 +7,40 @@ from braincoder.stimuli import Stimulus
 
 class AlphaDeltaModel(AlphaGaussianPRF):
 
-    parameter_labels = ['mu_narrow', 'sd', 'alpha', 'delta_wide', 'lower_bound_range', 'amplitude', 'baseline']
 
     def __init__(self, paradigm=None, data=None, parameters=None,
                  weights=None, omega=None, allow_neg_amplitudes=False, verbosity=logging.INFO,
                  model_stimulus_amplitude=False,
                  identity_below_range=False,
+                 seperate_amplitudes=False,
                  **kwargs):
 
         if allow_neg_amplitudes:
             raise NotImplementedError("Negative amplitudes are not allowed for AlphaDeltaModel")
 
         self.identity_below_range = identity_below_range
+        self.seperate_amplitude = seperate_amplitudes
+
+        if self.seperate_amplitude:
+            self.parameter_labels = ['mu_narrow', 'sd', 'alpha', 'delta_wide', 'lower_bound_range', 'amplitude_narrow', 'amplitude_wide', 'baseline']
+        else:
+            self.parameter_labels = ['mu_narrow', 'sd', 'alpha', 'delta_wide', 'lower_bound_range', 'amplitude', 'baseline']
+
+        if self.seperate_amplitude:
+            self._transform_parameters_forward2 = self._transform_parameters_forward22
+            self._transform_parameters_backward2 = self._transform_parameters_backward22
+        else:
+            self._transform_parameters_forward2 = self._transform_parameters_forward21
+            self._transform_parameters_backward2 = self._transform_parameters_backward21
 
         super().__init__(paradigm=paradigm, data=data, parameters=parameters,
                          weights=weights, omega=omega, allow_neg_amplitudes=allow_neg_amplitudes,
                           verbosity=verbosity, model_stimulus_amplitude=model_stimulus_amplitude,
                           **kwargs)
+
+
     @tf.function
-    def _transform_parameters_forward2(self, parameters):
+    def _transform_parameters_forward21(self, parameters):
         return tf.concat([tf.math.softplus(parameters[:, 0][:, tf.newaxis]),
                           tf.math.softplus(parameters[:, 1][:, tf.newaxis]),
                           parameters[:, 2][:, tf.newaxis],
@@ -35,7 +50,7 @@ class AlphaDeltaModel(AlphaGaussianPRF):
                           parameters[:, 6][:, tf.newaxis]], axis=1)
     
     @tf.function
-    def _transform_parameters_backward2(self, parameters):
+    def _transform_parameters_backward21(self, parameters):
         return tf.concat([tfp.math.softplus_inverse(parameters[:, 0][:, tf.newaxis]),
                           tfp.math.softplus_inverse(
                               parameters[:, 1][:, tf.newaxis]),
@@ -44,6 +59,30 @@ class AlphaDeltaModel(AlphaGaussianPRF):
                           parameters[:, 4][:, tf.newaxis],
                           tfp.math.softplus_inverse(parameters[:, 5][:, tf.newaxis]),
                           parameters[:, 6][:, tf.newaxis]], axis=1)
+
+    @tf.function
+    def _transform_parameters_forward22(self, parameters):
+        return tf.concat([tf.math.softplus(parameters[:, 0][:, tf.newaxis]),
+                          tf.math.softplus(parameters[:, 1][:, tf.newaxis]),
+                          parameters[:, 2][:, tf.newaxis],
+                          parameters[:, 3][:, tf.newaxis],
+                          parameters[:, 4][:, tf.newaxis],
+                          tf.math.softplus(parameters[:, 5][:, tf.newaxis]), # Amplitude
+                          tf.math.softplus(parameters[:, 6][:, tf.newaxis]), # Amplitude
+                          parameters[:, 7][:, tf.newaxis]], axis=1)
+    
+    @tf.function
+    def _transform_parameters_backward22(self, parameters):
+        return tf.concat([tfp.math.softplus_inverse(parameters[:, 0][:, tf.newaxis]),
+                          tfp.math.softplus_inverse(
+                              parameters[:, 1][:, tf.newaxis]),
+                          parameters[:, 2][:, tf.newaxis],
+                          parameters[:, 3][:, tf.newaxis],
+                          parameters[:, 4][:, tf.newaxis],
+                          tfp.math.softplus_inverse(parameters[:, 5][:, tf.newaxis]), # Amplitude
+                          tfp.math.softplus_inverse(parameters[:, 6][:, tf.newaxis]), # Amplitude
+                          parameters[:, 7][:, tf.newaxis]], axis=1)
+
 
     @tf.function
     def _basis_predictions_without_amplitude(self, paradigm, parameters):
@@ -82,11 +121,19 @@ class AlphaDeltaModel(AlphaGaussianPRF):
         if self.identity_below_range:
             mu = tf.where(mu < lower_bound_range, mu_narrow, mu)
 
+        if self.seperate_amplitude:
+            amplitude = tf.where(wide_condition, parameters[:, tf.newaxis, :, 5], parameters[:, tf.newaxis, :, 6])
+            baseline = parameters[:, tf.newaxis, :, 7]
+        else:
+            amplitude = parameters[:, tf.newaxis, :, 5]
+            baseline = parameters[:, tf.newaxis, :, 6]
+
+
         return f_x(x,
                    mu,
                     parameters[:, tf.newaxis, :, 1],
                     parameters[:, tf.newaxis, :, 2]) * \
-            parameters[:, tf.newaxis, :, 5] + parameters[:, tf.newaxis, :, 6]
+            amplitude + baseline
 
     def _get_stimulus(self, **kwargs):
         return Stimulus(n_dimensions=2)
