@@ -207,7 +207,7 @@ class Subject(object):
             im = image.concat_imgs([session1, session2])
 
         if roi is not None:
-            mask = self.get_volume_mask(roi=roi, session=session, epi_space=True)
+            mask = self.get_volume_mask(roi=roi, epi_space=True)
             masker = NiftiMasker(mask)
             im = masker.fit_transform(im)
 
