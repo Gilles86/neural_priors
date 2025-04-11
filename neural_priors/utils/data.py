@@ -207,7 +207,7 @@ class Subject(object):
             im = image.concat_imgs([session1, session2])
 
         if roi is not None:
-            mask = self.get_volume_mask(roi=roi, session=session, epi_space=True)
+            mask = self.get_volume_mask(roi=roi, epi_space=True)
             masker = NiftiMasker(mask)
             im = masker.fit_transform(im)
 
@@ -424,7 +424,7 @@ class Subject(object):
 
         return parameters
 
-    def get_prf_parameters_volume2(self, model_label, smoothed=True, roi=None):
+    def get_prf_parameters_volume2(self, model_label, smoothed=True, roi=None, response_fit=False, return_image=False):
 
         par_keys = ['mu', 'sd', 'alpha', 'delta_wide', 'lower_bound_range', 'amplitude', 'baseline']
 
@@ -435,6 +435,10 @@ class Subject(object):
         if smoothed:
             key += '.smoothed'
             cv_key += '.smoothed'
+
+        if response_fit:
+            key += '.fit_responses'
+            cv_key += '.fit_responses'
 
         masker = self.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
 
@@ -453,7 +457,13 @@ class Subject(object):
 
         pars.append(pd.Series(masker.transform(op.join(cv_dir, f'sub-{self.subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')).squeeze(), name=('cvr2', None)))
 
-        return pd.concat(pars, axis=1, names=['parameter', 'range'])
+        pars = pd.concat(pars, axis=1, names=['parameter', 'range'])
+
+        if return_image:
+            return masker.inverse_transform(pars.T)
+        else:
+            return pars
+
 
     def get_surf_info(self):
         info = {'L':{}, 'R':{}}
@@ -498,6 +508,43 @@ class Subject(object):
         parameters = []
 
         dir = op.join(self.bids_folder, 'derivatives', key, f'sub-{self.subject_id}', 'func')
+        fn_template = op.join(dir, 'sub-{subject_id}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
+
+        for parameter_key in parameter_keys:
+
+            fn = fn_template.format(parameter_key=parameter_key, subject_id=self.subject_id, hemi=hemi, space=space)
+
+            pars = pd.Series(surface.load_surf_data(fn))
+            pars.index.name = 'vertex'
+
+            parameters.append(pars)
+
+        return pd.concat(parameters, axis=1, keys=parameter_keys, names=['parameter'])
+
+    def get_prf_parameters_surf2(self, model_label, smoothed=False, hemi=None, space='fsnative', fit_responses=False):
+
+        parameter_keys = ['r2', 'cvr2', 'mu.narrow', 'mu.wide']
+
+        if hemi is None:
+            prf_l = self.get_prf_parameters_surf2(model_label, smoothed, hemi='L', space=space)
+            prf_r = self.get_prf_parameters_surf2(model_label, smoothed, hemi='R', space=space)
+            
+            return pd.concat((prf_l, prf_r), axis=0, 
+                    keys=pd.Index(['L', 'R'], name='hemi'))
+
+        # Find target folder
+        key = f'model{model_label}'
+
+        if smoothed:
+            key += '.smoothed'
+
+        if fit_responses:
+            key += '.fit_responses'
+
+        dir = op.join(self.bids_folder, 'derivatives', 'encoding_models2', key, f'sub-{self.subject_id}', 'func')
+
+        parameters = []
+
         fn_template = op.join(dir, 'sub-{subject_id}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
 
         for parameter_key in parameter_keys:
