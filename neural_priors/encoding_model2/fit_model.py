@@ -21,6 +21,7 @@ from neural_priors.encoding_model2.models import AlphaDeltaModel
 # Model 8: Like model 5, gamma free
 # Model 9: Like model 3, baseline fixed at 0
 # Model 10: Like model 3, baseline fixed at 0, seperate amplitudes
+# Model 11: Like model 10, but rescale baseline based on amplitude ratio
 
 
 def get_model(model_label):
@@ -29,6 +30,8 @@ def get_model(model_label):
         model = AlphaDeltaModel(identity_below_range=True)
     elif model_label in [10]:
         model = AlphaDeltaModel(seperate_amplitudes=True)
+    elif model_label in [11]:
+        model = AlphaDeltaModel(seperate_amplitudes=True, rescale_baseline=True)
     else:
         model = AlphaDeltaModel()
 
@@ -52,13 +55,17 @@ def get_grid(model_label):
         delta_wides = [1.0]
     elif model_label in [1, 4, 7]:
         delta_wides = [2.0]
-    elif model_label in [2, 3, 5, 6, 8, 9, 10]:
+    elif model_label in [2, 3, 5, 6, 8, 9, 10, 11]:
         delta_wides = [.5, 1.0, 1.5, 2.0, 2.5]
 
-    if model_label not in [10]:
+    if model_label not in [10, 11]:
         return modes, sds, alphas, delta_wides, intersection_point,  amplitudes, baselines
     else:
-        return modes, sds, alphas, delta_wides, intersection_point,  amplitudes, amplitudes, baselines
+        if model_label in [11]:
+            baseline_ratios = [0.8]
+            return modes, sds, alphas, delta_wides, intersection_point,  amplitudes, amplitudes, baselines, baseline_ratios
+        else:
+            return modes, sds, alphas, delta_wides, intersection_point,  amplitudes, amplitudes, baselines
 
 def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
 
@@ -66,10 +73,15 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
     fitter = ParameterFitter(model, data, paradigm)
     grid = get_grid(model_label)
 
+    print(len(grid))
+    print(model.parameter_labels)
+    print(len(model.parameter_labels))
+    print(grid)
+
     grid_pars = fitter.fit_grid(*grid, use_correlation_cost=True)
     
 
-    if model_label not in [9, 10]:
+    if model_label not in [9, 10, 11]:
         grid_pars = fitter.refine_baseline_and_amplitude(grid_pars)
 
     fixed_pars = []
@@ -79,7 +91,7 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
 
     fixed_pars += ['lower_bound_range']
 
-    if (model_label in range(0, 6)) or (model_label in [9, 10]):
+    if (model_label in range(0, 6)) or (model_label in [9, 10, 11]):
         fixed_pars += ['alpha']
     else:
         shared_pars += ['alpha']
@@ -91,6 +103,9 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
     
     if model_label in [9, 10]:
         fixed_pars += ['baseline']
+    
+    if model_label in [11]:
+        shared_pars += ['baseline_ratio']
 
     gd_pars = fitter.fit(max_n_iterations=max_n_iterations, init_pars=grid_pars,
                          shared_pars=shared_pars, fixed_pars=fixed_pars)
@@ -147,11 +162,16 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
     if model_label in [4, 5, 7, 8]:
         pars[('mu', 'wide')] = pars[('mu', 'wide')].where(pars[('mu', 'wide')] > 10, pars[('mu', 'narrow')])
 
-    if model_label in [10]:
+    if model_label in [10, 11]:
         pars[('amplitude', 'narrow')] = estimated_parameters['amplitude_narrow']
         pars[('amplitude', 'wide')] = estimated_parameters['amplitude_wide']
 
-        for p in ['sd', 'baseline', 'alpha', 'delta_wide', 'lower_bound_range']:
+        par_labels = ['sd', 'baseline', 'alpha', 'delta_wide', 'lower_bound_range']
+
+        if model_label in [11]:
+            par_labels += ['baseline_ratio']
+
+        for p in par_labels:
             pars[(p, 'narrow')] = estimated_parameters[p]
             pars[(p, 'wide')] = estimated_parameters[p]
 

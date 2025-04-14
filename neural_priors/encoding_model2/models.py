@@ -13,22 +13,35 @@ class AlphaDeltaModel(AlphaGaussianPRF):
                  model_stimulus_amplitude=False,
                  identity_below_range=False,
                  seperate_amplitudes=False,
+                 rescale_baseline=False,
                  **kwargs):
 
         if allow_neg_amplitudes:
             raise NotImplementedError("Negative amplitudes are not allowed for AlphaDeltaModel")
 
+        if rescale_baseline and not seperate_amplitudes:
+            raise NotImplementedError("Rescaling baseline is not allowed without separate amplitudes")
+
         self.identity_below_range = identity_below_range
         self.seperate_amplitude = seperate_amplitudes
+        self.rescale_baseline = rescale_baseline
 
         if self.seperate_amplitude:
             self.parameter_labels = ['mu_narrow', 'sd', 'alpha', 'delta_wide', 'lower_bound_range', 'amplitude_narrow', 'amplitude_wide', 'baseline']
+
+            if self.rescale_baseline:
+                self.parameter_labels += ['baseline_ratio']
+
         else:
             self.parameter_labels = ['mu_narrow', 'sd', 'alpha', 'delta_wide', 'lower_bound_range', 'amplitude', 'baseline']
 
         if self.seperate_amplitude:
-            self._transform_parameters_forward2 = self._transform_parameters_forward22
-            self._transform_parameters_backward2 = self._transform_parameters_backward22
+            if rescale_baseline:
+                self._transform_parameters_forward2 = self._transform_parameters_forward23
+                self._transform_parameters_backward2 = self._transform_parameters_backward23
+            else:
+                self._transform_parameters_forward2 = self._transform_parameters_forward22
+                self._transform_parameters_backward2 = self._transform_parameters_backward22
         else:
             self._transform_parameters_forward2 = self._transform_parameters_forward21
             self._transform_parameters_backward2 = self._transform_parameters_backward21
@@ -84,6 +97,32 @@ class AlphaDeltaModel(AlphaGaussianPRF):
                           parameters[:, 7][:, tf.newaxis]], axis=1)
 
 
+    @tf.function 
+    def _transform_parameters_forward23(self, parameters):
+        """" In case we have rescaling of the baseline """
+        return tf.concat([tf.math.softplus(parameters[:, 0][:, tf.newaxis]),
+                          tf.math.softplus(parameters[:, 1][:, tf.newaxis]),
+                          parameters[:, 2][:, tf.newaxis],
+                          parameters[:, 3][:, tf.newaxis],
+                          parameters[:, 4][:, tf.newaxis],
+                          tf.math.softplus(parameters[:, 5][:, tf.newaxis]), # Amplitude
+                          tf.math.softplus(parameters[:, 6][:, tf.newaxis]), # Amplitude
+                          parameters[:, 7][:, tf.newaxis], #Baseline
+                          parameters[:, 8][:, tf.newaxis]], axis=1) # Rescale baseline
+    
+    @tf.function
+    def _transform_parameters_backward23(self, parameters):
+        return tf.concat([tfp.math.softplus_inverse(parameters[:, 0][:, tf.newaxis]),
+                          tfp.math.softplus_inverse(
+                              parameters[:, 1][:, tf.newaxis]),
+                          parameters[:, 2][:, tf.newaxis],
+                          parameters[:, 3][:, tf.newaxis],
+                          parameters[:, 4][:, tf.newaxis],
+                          tfp.math.softplus_inverse(parameters[:, 5][:, tf.newaxis]), # Amplitude
+                          tfp.math.softplus_inverse(parameters[:, 6][:, tf.newaxis]), # Amplitude
+                          parameters[:, 7][:, tf.newaxis],
+                          parameters[:, 8][:, tf.newaxis]], axis=1)    
+
     @tf.function
     def _basis_predictions_without_amplitude(self, paradigm, parameters):
 
@@ -122,8 +161,11 @@ class AlphaDeltaModel(AlphaGaussianPRF):
             mu = tf.where(mu < lower_bound_range, mu_narrow, mu)
 
         if self.seperate_amplitude:
-            amplitude = tf.where(wide_condition, parameters[:, tf.newaxis, :, 5], parameters[:, tf.newaxis, :, 6])
-            baseline = parameters[:, tf.newaxis, :, 7]
+            amplitude = tf.where(wide_condition, parameters[:, tf.newaxis, :, 6], parameters[:, tf.newaxis, :, 5])
+            if self.rescale_baseline:
+                baseline = parameters[:, tf.newaxis, :, 7] - amplitude * parameters[:, tf.newaxis, :, 8]
+            else:
+                baseline = parameters[:, tf.newaxis, :, 7]
         else:
             amplitude = parameters[:, tf.newaxis, :, 5]
             baseline = parameters[:, tf.newaxis, :, 6]
