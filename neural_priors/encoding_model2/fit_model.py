@@ -20,18 +20,26 @@ from neural_priors.encoding_model2.models import AlphaDeltaModel
 # Model 7: Like model 4, gamma free
 # Model 8: Like model 5, gamma free
 # Model 9: Like model 3, baseline fixed at 0
-# Model 10: Like model 3, baseline fixed at 0, seperate amplitudes
+# Model 10: Like model 3, baseline fixed at 0, separate amplitudes
 # Model 11: Like model 10, but rescale baseline based on amplitude ratio
-
+# Model 12: model 4 with free amplitude and free baseline”.
+# Model 13: jmodel 4 with free amplitude, and r”.
+# Model 14: model 4 with free widths.
 
 def get_model(model_label):
 
     if model_label in [4, 5, 7, 8]:
         model = AlphaDeltaModel(identity_below_range=True)
     elif model_label in [10]:
-        model = AlphaDeltaModel(seperate_amplitudes=True)
+        model = AlphaDeltaModel(separate_amplitudes=True)
     elif model_label in [11]:
-        model = AlphaDeltaModel(seperate_amplitudes=True, rescale_baseline=True)
+        model = AlphaDeltaModel(separate_amplitudes=True, rescale_baseline=True)
+    elif model_label in [12]:
+        model = AlphaDeltaModel(separate_amplitudes=True, separate_baselines=True, identity_below_range=True)
+    elif model_label in [13]:
+        model = AlphaDeltaModel(separate_amplitudes=True, rescale_baseline=True, identity_below_range=True)
+    elif model_label in [14]:
+        model = AlphaDeltaModel(separate_sds=True, identity_below_range=True)
     else:
         model = AlphaDeltaModel()
 
@@ -53,19 +61,25 @@ def get_grid(model_label):
 
     if model_label in [0]:
         delta_wides = [1.0]
-    elif model_label in [1, 4, 7]:
+    elif model_label in [1, 4, 7, 12, 13, 14]:
         delta_wides = [2.0]
     elif model_label in [2, 3, 5, 6, 8, 9, 10, 11]:
         delta_wides = np.linspace(.3, 3., 10)
 
-    if model_label not in [10, 11]:
-        return modes, sds, alphas, delta_wides, intersection_point,  amplitudes, baselines
+    baseline_ratios = [0.8]
+
+    if model_label < 10:
+        return modes, alphas, delta_wides, intersection_point, sds, amplitudes, baselines
     else:
         if model_label in [11]:
-            baseline_ratios = [0.8]
-            return modes, sds, alphas, delta_wides, intersection_point,  amplitudes, amplitudes, baselines, baseline_ratios
-        else:
-            return modes, sds, alphas, delta_wides, intersection_point,  amplitudes, amplitudes, baselines
+            return modes, alphas, delta_wides, intersection_point, sds,  amplitudes, amplitudes, baselines, baseline_ratios
+        elif model_label in [12]:
+            return modes, alphas, delta_wides, intersection_point, sds,  amplitudes, amplitudes, baselines, baselines
+        elif model_label in [13]:
+            return modes, alphas, delta_wides, intersection_point, sds,  amplitudes, amplitudes, baselines, baseline_ratios
+        elif model_label in [14]:
+            return modes, alphas, delta_wides, intersection_point, sds,  sds, amplitudes, baselines
+
 
 def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
 
@@ -81,7 +95,7 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
     grid_pars = fitter.fit_grid(*grid, use_correlation_cost=True)
     
 
-    if model_label not in [9, 10, 11]:
+    if model_label < 9 or model_label == 14:
         grid_pars = fitter.refine_baseline_and_amplitude(grid_pars)
 
     fixed_pars = []
@@ -90,12 +104,12 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
     if model_label not in [3, 6, 9, 10]:
         fixed_pars += ['lower_bound_range']
 
-    if (model_label in range(0, 6)) or (model_label in [9, 10, 11]):
+    if (model_label in range(0, 6)) or (model_label > 8):
         fixed_pars += ['alpha']
     else:
         shared_pars += ['alpha']
 
-    if model_label in [0, 1, 4, 7]:
+    if model_label in [0, 1, 4, 7, 12, 13, 14]:
         fixed_pars += ['delta_wide']
     elif model_label in [2, 5, 8]:
         shared_pars += ['delta_wide']
@@ -103,7 +117,7 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
     if model_label in [9, 10]:
         fixed_pars += ['baseline']
     
-    if model_label in [11]:
+    if model_label in [12]:
         shared_pars += ['baseline_ratio']
 
     gd_pars = fitter.fit(max_n_iterations=max_n_iterations, init_pars=grid_pars,
@@ -158,17 +172,33 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
     pars[('mu', 'narrow')] = estimated_parameters['mu_narrow']
     pars[('mu', 'wide')] = estimated_parameters['delta_wide'] * (estimated_parameters['mu_narrow'] - estimated_parameters['lower_bound_range']) + estimated_parameters['lower_bound_range']
 
-    if model_label in [4, 5, 7, 8]:
+    if model_label in [4, 5, 7, 8, 12, 13, 14]:
         pars[('mu', 'wide')] = pars[('mu', 'wide')].where(pars[('mu', 'wide')] > 10, pars[('mu', 'narrow')])
 
-    if model_label in [10, 11]:
-        pars[('amplitude', 'narrow')] = estimated_parameters['amplitude_narrow']
-        pars[('amplitude', 'wide')] = estimated_parameters['amplitude_wide']
+    if model_label > 9:
 
-        par_labels = ['sd', 'baseline', 'alpha', 'delta_wide', 'lower_bound_range']
+        par_labels = ['alpha', 'delta_wide', 'lower_bound_range']
 
-        if model_label in [11]:
+        if model_label in [14]:
+            par_labels += ['amplitude']
+        else:
+            pars[('amplitude', 'narrow')] = estimated_parameters['amplitude_narrow']
+            pars[('amplitude', 'wide')] = estimated_parameters['amplitude_wide']
+
+        if model_label in [11, 13]:
             par_labels += ['baseline_ratio']
+
+        if model_label in [12]:
+            pars[('baseline', 'narrow')] = estimated_parameters['baseline_narrow']
+            pars[('baseline', 'wide')] = estimated_parameters['baseline_wide']
+        else:
+            par_labels += ['baseline']
+
+        if model_label in [14]:
+            pars[('sd', 'narrow')] = estimated_parameters['sd_narrow']
+            pars[('sd', 'wide')] = estimated_parameters['sd_wide']
+        else:
+            par_labels += ['sd']
 
         for p in par_labels:
             pars[(p, 'narrow')] = estimated_parameters[p]
