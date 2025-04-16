@@ -117,7 +117,7 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
     if model_label in [9, 10]:
         fixed_pars += ['baseline']
     
-    if model_label in [12]:
+    if model_label in [13]:
         shared_pars += ['baseline_ratio']
 
     gd_pars = fitter.fit(max_n_iterations=max_n_iterations, init_pars=grid_pars,
