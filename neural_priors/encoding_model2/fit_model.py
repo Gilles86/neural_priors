@@ -8,7 +8,7 @@ import pandas as pd
 from nilearn.maskers import NiftiMasker
 from nilearn import image
 from braincoder.optimize import ParameterFitter
-from neural_priors.encoding_model2.models import AlphaDeltaModel
+from neural_priors.encoding_model2.models import AlphaDeltaModel, LinearScalingModel
 
 # Model 0: null model
 # Model 1: delta_wide is 2
@@ -25,6 +25,9 @@ from neural_priors.encoding_model2.models import AlphaDeltaModel
 # Model 12: model 4 with free amplitude and free baseline”.
 # Model 13: jmodel 4 with free amplitude, and r”.
 # Model 14: model 4 with free widths.
+# Model 15: model 4 with scaled widths
+# Model 16: model 4 with scaled widths and free amplitude
+# Model 17: model 4 with scaled widths and free amplitude, rescale baseline
 
 def get_model(model_label):
 
@@ -40,6 +43,12 @@ def get_model(model_label):
         model = AlphaDeltaModel(separate_amplitudes=True, rescale_baseline=True, identity_below_range=True)
     elif model_label in [14]:
         model = AlphaDeltaModel(separate_sds=True, identity_below_range=True)
+    elif model_label in [15, 18]:
+        model = LinearScalingModel(separate_amplitudes=False, identity_below_range=True, separate_sds=True)
+    elif model_label in [16, 19]:
+        model = LinearScalingModel(separate_amplitudes=True, identity_below_range=True, separate_sds=False, rescale_baseline=True)
+    elif model_label in [17, 20]:
+        model = LinearScalingModel(separate_amplitudes=True, identity_below_range=True, separate_sds=True, rescale_baseline=True)
     else:
         model = AlphaDeltaModel()
 
@@ -49,6 +58,8 @@ def get_grid(model_label):
 
     modes = np.linspace(5, 45, 41)
     sds = np.linspace(np.log(2), np.log(30), 30)
+
+    sd_scales = [1.]
 
     if model_label in range(6, 9):
         alphas = np.linspace(-1., 1., 5)
@@ -61,12 +72,15 @@ def get_grid(model_label):
 
     if model_label in [0]:
         delta_wides = [1.0]
-    elif model_label in [1, 4, 7, 12, 13, 14]:
+    elif model_label in [1, 4, 7, 12, 13, 14, 15, 16, 17]:
         delta_wides = [2.0]
-    elif model_label in [2, 3, 5, 6, 8, 9, 10, 11]:
+    elif model_label in [2, 3, 5, 6, 8, 9, 10, 11, 18, 19, 20]:
         delta_wides = np.linspace(.3, 3., 10)
 
     baseline_ratios = [0.8]
+
+    amplitudes_alpha = [0.0]
+    amplitudes_beta = [1.0]
 
     if model_label < 10:
         return modes, alphas, delta_wides, intersection_point, sds, amplitudes, baselines
@@ -79,7 +93,12 @@ def get_grid(model_label):
             return modes, alphas, delta_wides, intersection_point, sds,  amplitudes, amplitudes, baselines, baseline_ratios
         elif model_label in [14]:
             return modes, alphas, delta_wides, intersection_point, sds,  sds, amplitudes, baselines
-
+        elif model_label in [15, 18]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude']
+            return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes
+        elif model_label in [16, 19]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
+            return modes, delta_wides, intersection_point, baselines, sds, amplitudes, amplitudes_alpha, amplitudes_beta, baseline_ratios
+        elif model_label in [17, 20]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
+            return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes, amplitudes_alpha, amplitudes_beta, baseline_ratios
 
 def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
 
@@ -104,7 +123,7 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
     if model_label not in [3, 6, 9, 10]:
         fixed_pars += ['lower_bound_range']
 
-    if (model_label in range(0, 6)) or (model_label > 8):
+    if ((model_label in range(0, 6)) or (model_label > 8)) and ( model_label < 15):
         fixed_pars += ['alpha']
     else:
         shared_pars += ['alpha']
@@ -119,6 +138,20 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
     
     if model_label in [13]:
         shared_pars += ['baseline_ratio']
+
+    # MODELS ABOVE 14 (LinearScalingModel)
+    if model_label in [15, 16, 17]:
+        fixed_pars += ['delta_wide']
+
+    if model_label in [15, 17, 18, 20]:
+        shared_pars += ['sd_wide_scale']
+
+    if model_label in [16, 17, 19, 20]:
+        shared_pars += ['amplitude_alpha', 'amplitude_beta']
+        shared_pars += ['baseline_ratio']
+
+    if model_label in [18, 19, 20]:
+        shared_pars += ['delta_wide']
 
     gd_pars = fitter.fit(max_n_iterations=max_n_iterations, init_pars=grid_pars,
                          shared_pars=shared_pars, fixed_pars=fixed_pars)
@@ -172,10 +205,10 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
     pars[('mu', 'narrow')] = estimated_parameters['mu_narrow']
     pars[('mu', 'wide')] = estimated_parameters['delta_wide'] * (estimated_parameters['mu_narrow'] - estimated_parameters['lower_bound_range']) + estimated_parameters['lower_bound_range']
 
-    if model_label in [4, 5, 7, 8, 12, 13, 14]:
+    if (model_label in [4, 5, 7, 8]) or (model_label > 11):
         pars[('mu', 'wide')] = pars[('mu', 'wide')].where(pars[('mu', 'wide')] > 10, pars[('mu', 'narrow')])
 
-    if model_label > 9:
+    if (model_label > 9) & (model_label < 15):
 
         par_labels = ['alpha', 'delta_wide', 'lower_bound_range']
 
@@ -199,6 +232,36 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
             pars[('sd', 'wide')] = estimated_parameters['sd_wide']
         else:
             par_labels += ['sd']
+
+        for p in par_labels:
+            pars[(p, 'narrow')] = estimated_parameters[p]
+            pars[(p, 'wide')] = estimated_parameters[p]
+
+    elif model_label > 14:
+
+        par_labels = ['delta_wide']
+
+        if model_label in [16, 17, 19, 20]:
+            pars[('amplitude', 'narrow')] = estimated_parameters['amplitude_narrow']
+            pars[('amplitude', 'wide')] = estimated_parameters['amplitude_alpha'] + estimated_parameters['amplitude_beta'] * estimated_parameters['amplitude_narrow']
+
+            pars[('baseline', 'narrow')] = estimated_parameters['baseline'] - pars[('amplitude', 'narrow')] * estimated_parameters['baseline_ratio']
+            pars[('baseline', 'wide')] = estimated_parameters['baseline'] -  pars[('amplitude', 'wide')] * estimated_parameters['baseline_ratio']
+
+            par_labels += ['baseline_ratio']
+        else:
+            pars[('amplitude', 'narrow')] = estimated_parameters['amplitude']
+            pars[('amplitude', 'wide')] = estimated_parameters['amplitude']
+
+            pars[('baseline', 'narrow')] = estimated_parameters['baseline']
+            pars[('baseline', 'wide')] = estimated_parameters['baseline']
+
+        if model_label in [15, 17, 18, 20]:
+            pars[('sd', 'narrow')] = estimated_parameters['sd_narrow']
+            pars[('sd', 'wide')] = estimated_parameters['sd_wide_scale'] * estimated_parameters['sd_narrow']
+        else:
+            pars[('sd', 'narrow')] = estimated_parameters['sd']
+            pars[('sd', 'wide')] = estimated_parameters['sd'] 
 
         for p in par_labels:
             pars[(p, 'narrow')] = estimated_parameters[p]
