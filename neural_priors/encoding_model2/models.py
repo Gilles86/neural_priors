@@ -260,7 +260,7 @@ class LinearScalingModel(AlphaGaussianPRF):
         wide_condition = tf.cast(paradigm[..., tf.newaxis, 1], tf.bool)  # Ensure this is a tensor
 
         delta_wide = parameters[:, tf.newaxis, :, 1]
-        lower_bound_range = parameters[:, tf.newaxis, :, 1]
+        lower_bound_range = parameters[:, tf.newaxis, :, 2]
 
         mu_narrow = parameters[:, tf.newaxis, :, 0]
         mu_wide = tf.clip_by_value(((mu_narrow - lower_bound_range) * delta_wide) + lower_bound_range, 1e-6, float('inf'))
