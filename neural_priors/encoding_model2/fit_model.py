@@ -25,9 +25,9 @@ from neural_priors.encoding_model2.models import AlphaDeltaModel, LinearScalingM
 # Model 12: model 4 with free amplitude and free baseline”.
 # Model 13: jmodel 4 with free amplitude, and r”.
 # Model 14: model 4 with free widths.
-# Model 15: model 4 with scaled widths
-# Model 16: model 4 with scaled widths and free amplitude
-# Model 17: model 4 with scaled widths and free amplitude, rescale baseline
+# Model 15: model 4 with free widths (same slope across voxels)
+# Model 16: model 4 with free amplitude (same intercept and slope across voxels)
+# Model 17: model 4 with free widths and free amplitudes (same intercept and slope across voxels)
 
 def get_model(model_label):
 
@@ -294,7 +294,7 @@ def get_paradigm(sub, fit_responses=False):
 def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', debug=False, roi='NPCr',
          fit_responses=False):
 
-    max_n_iterations = 100 if debug else 2000
+    max_n_iterations = 100 if debug else 5000
 
     # Create target folder
     key = f'model{model_label}'

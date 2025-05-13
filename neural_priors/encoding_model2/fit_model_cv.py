@@ -14,7 +14,7 @@ from fit_model import get_paradigm, get_model, fit_model
 def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', gaussian=True, debug=False, roi='NPCr',
          fit_responses=False):
 
-    max_n_iterations = 100 if debug else 2000
+    max_n_iterations = 100 if debug else 5000
 
     # Create target folder
     key = f'model{model_label}.cv'
