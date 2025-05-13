@@ -81,9 +81,9 @@ def get_grid(model_label):
 
     if model_label in [0]:
         delta_wides = [1.0]
-    elif model_label in [1, 4, 7, 12, 13, 14, 15, 16, 17]:
+    elif model_label in [1, 4, 7, 12, 13, 14, 15, 16, 17, 21, 22]:
         delta_wides = [2.0]
-    elif model_label in [2, 3, 5, 6, 8, 9, 10, 11, 18, 19, 20]:
+    elif model_label in [2, 3, 5, 6, 8, 9, 10, 11, 18, 19, 20, 23, 24]:
         delta_wides = np.linspace(.3, 3., 10)
 
     baseline_ratios = [.25, .4, .6, 0.8]
