@@ -57,7 +57,7 @@ def get_model(model_label):
     elif model_label in [21, 23]:
         model = LinearScalingModel(separate_amplitudes=True, identity_below_range=True, separate_sds=False, rescale_baseline=False)
     elif model_label in [22, 24]:
-        model = LinearScalingModel(separate_amplitudes=True, identity_below_range=True, separate_sds=False, rescale_baseline=False)
+        model = LinearScalingModel(separate_amplitudes=True, identity_below_range=True, separate_sds=True, rescale_baseline=False)
     else:
         model = AlphaDeltaModel()
 
@@ -109,9 +109,9 @@ def get_grid(model_label):
         elif model_label in [17, 20]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes, amplitudes_alpha, amplitudes_beta, baseline_ratios
         elif model_label in [21, 23]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
-            return modes, delta_wides, intersection_point, baselines, sds, amplitudes, amplitudes_alpha, amplitudes_beta, baselines
+            return modes, delta_wides, intersection_point, baselines, sds, amplitudes, amplitudes_alpha, amplitudes_beta
         elif model_label in [22, 24]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
-            return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes, amplitudes_alpha, amplitudes_beta, baselines
+            return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes, amplitudes_alpha, amplitudes_beta
 
 def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
 
@@ -257,7 +257,7 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
 
         par_labels = ['delta_wide']
 
-        if model_label in [16, 17, 19, 20, 21, 22, 23, 24]:
+        if model_label in [16, 17, 19, 20]:
             pars[('amplitude', 'narrow')] = estimated_parameters['amplitude_narrow']
             pars[('amplitude', 'wide')] = estimated_parameters['amplitude_alpha'] + estimated_parameters['amplitude_beta'] * estimated_parameters['amplitude_narrow']
 
@@ -265,6 +265,13 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
             pars[('baseline', 'wide')] = estimated_parameters['baseline'] -  pars[('amplitude', 'wide')] * estimated_parameters['baseline_ratio']
 
             par_labels += ['baseline_ratio']
+
+        elif model_label in [21, 22, 23, 24]:
+            pars[('amplitude', 'narrow')] = estimated_parameters['amplitude_narrow']
+            pars[('amplitude', 'wide')] = estimated_parameters['amplitude_alpha'] + estimated_parameters['amplitude_beta'] * estimated_parameters['amplitude_narrow']
+
+            par_labels += ['baseline']
+
         else:
             pars[('amplitude', 'narrow')] = estimated_parameters['amplitude']
             pars[('amplitude', 'wide')] = estimated_parameters['amplitude']
