@@ -26,9 +26,9 @@ def get_decoding_paradigm(sub, fit_responses=False, drop_levels=True):
     return paradigm
 
 def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors', smoothed=True, debug=False, fit_responses=False,
-         n_voxels=100):
+         n_voxels=100, spherical_noise=False):
 
-    assert model_label in [3,4, 5], 'Only model 3, 4 and 5 are supported for decoding'
+    assert model_label in [3,4, 5, 15, 18], 'Only model 3, 4 and 5 and 15 are supported for decoding'
 
 
     sub = Subject(subject_id=subject, bids_folder=bids_folder)
@@ -41,6 +41,9 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
 
     if smoothed:
         key += '.smoothed'
+
+    if spherical_noise:
+        key += '.spherical_noise'
 
     if fit_responses:
         key += '.fit_responses'
@@ -122,7 +125,8 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
                 init_dof=10.0,
                 method='t',
                 learning_rate=0.05,
-                max_n_iterations=20000 if not debug else 100)
+                max_n_iterations=20000 if not debug else 100,
+                spherical=spherical_noise,)
 
         print('DOF', dof)
 
@@ -150,6 +154,8 @@ if __name__ == '__main__':
     parser.add_argument('--n_voxels', type=int)
     parser.add_argument('--fit_responses', action='store_true')
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--spherical_noise', action='store_true')
     args = parser.parse_args()
 
-    main(subject=args.subject, model_label=args.model_label, bids_folder=args.bids_folder, smoothed=args.smoothed, debug=args.debug, fit_responses=args.fit_responses, n_voxels=args.n_voxels)
+    main(subject=args.subject, model_label=args.model_label, bids_folder=args.bids_folder, smoothed=args.smoothed, debug=args.debug, fit_responses=args.fit_responses, n_voxels=args.n_voxels,
+         spherical_noise=args.spherical_noise)
