@@ -26,9 +26,9 @@ def get_decoding_paradigm(sub, fit_responses=False, drop_levels=True):
     return paradigm
 
 def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors', smoothed=True, debug=False, fit_responses=False,
-         n_voxels=100, spherical_noise=False):
+         n_voxels=100, spherical_noise=False, separate_sigmas=False):
 
-    assert model_label in [3,4, 5, 15, 18], 'Only model 3, 4 and 5 and 15 are supported for decoding'
+    assert model_label in [15, 18], 'Only model 15 and 18 are supported for decoding'
 
 
     sub = Subject(subject_id=subject, bids_folder=bids_folder)
@@ -47,6 +47,9 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
 
     if fit_responses:
         key += '.fit_responses'
+
+    if separate_sigmas:
+        key += '.seperate_sigmas'
 
     target_dir = bids_folder / 'derivatives' / 'decoding2' / key / f'sub-{subject}' / 'func'
 
@@ -73,6 +76,8 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
 
         test_data, test_paradigm = data.loc[(test_session, test_run)].copy().astype(np.float32), paradigm.loc[(test_session, test_run)].copy().astype(np.float32)
         train_data, train_paradigm = data.drop((test_session, test_run)).copy(), paradigm.drop((test_session, test_run)).copy()
+
+        print(test_paradigm)
 
         # Get model
         model = get_model(model_label)
@@ -116,28 +121,87 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
             test_data = test_data[r2_mask]
 
 
-        model.init_pseudoWWT(stimulus_range, gd_pars)
+        if separate_sigmas:
 
-        residfit = ResidualFitter(model, train_data,
-                                  train_paradigm, parameters=gd_pars,)
+            train_narrow_ix = train_paradigm['range'] == 0.0
+            train_wide_ix = train_paradigm['range'] == 1.0
 
-        omega, dof = residfit.fit(init_sigma2=0.1,
-                init_dof=10.0,
-                method='t',
-                learning_rate=0.05,
-                max_n_iterations=20000 if not debug else 100,
-                spherical=spherical_noise,)
+            train_data_narrow = train_data[train_narrow_ix]
+            train_data_wide = train_data[train_wide_ix]
+            train_paradigm_narrow = train_paradigm[train_narrow_ix]
+            train_paradigm_wide = train_paradigm[train_wide_ix]
 
-        print('DOF', dof)
+            
+            test_narrow_ix = test_paradigm['range'] == 0.0
+            test_wide_ix = test_paradigm['range'] == 1.0
+            test_data_narrow = test_data[test_narrow_ix]
+            test_data_wide = test_data[test_wide_ix]
 
-        pdf = model.get_stimulus_pdf(test_data, stimulus_range,
-                gd_pars,
-                omega=omega,
-                dof=dof,
-                normalize=False)
 
-        print(pdf)
-        pdfs.append(pdf)
+            stimulus_range_narow = stimulus_range[:len(stimulus_range) // 2]
+            stimulus_range_wide = stimulus_range[len(stimulus_range) // 2:]
+
+            # Get pdf for narrow condition
+            model.init_pseudoWWT(stimulus_range_narow, gd_pars)
+
+            residfit_narrow = ResidualFitter(model, train_data_narrow,
+                                            train_paradigm_narrow, parameters=gd_pars,)
+            omega_narrow, dof_narrow = residfit_narrow.fit(init_sigma2=0.1,
+                    init_dof=10.0,
+                    method='t',
+                    learning_rate=0.05,
+                    max_n_iterations=20000 if not debug else 100)
+
+            print('DOF narrow', dof_narrow)
+            pdf_narrow = model.get_stimulus_pdf(test_data_narrow, stimulus_range,
+                    gd_pars,
+                    omega=omega_narrow,
+                    dof=dof_narrow,
+                    normalize=False)
+            
+
+            # Get pdf for wide condition
+            model.init_pseudoWWT(stimulus_range_wide, gd_pars)
+            residfit_wide = ResidualFitter(model, train_data_wide,
+                                            train_paradigm_wide, parameters=gd_pars,)
+            omega_wide, dof_wide = residfit_wide.fit(init_sigma2=0.1,
+                    init_dof=10.0,
+                    method='t',
+                    learning_rate=0.05,
+                    max_n_iterations=20000 if not debug else 100)
+
+            print('DOF wide', dof_wide)
+            pdf_wide = model.get_stimulus_pdf(test_data_wide, stimulus_range,
+                    gd_pars,
+                    omega=omega_wide,
+                    dof=dof_wide,
+                    normalize=False)
+            pdfs.append(pd.concat([pdf_narrow, pdf_wide], axis=1))
+
+
+
+        else:
+            model.init_pseudoWWT(stimulus_range, gd_pars)
+
+            residfit = ResidualFitter(model, train_data,
+                                        train_paradigm, parameters=gd_pars,)
+
+            omega, dof = residfit.fit(init_sigma2=0.1,
+                    init_dof=10.0,
+                    method='t',
+                    learning_rate=0.05,
+                    max_n_iterations=20000 if not debug else 100)
+
+            print('DOF', dof)
+
+            pdf = model.get_stimulus_pdf(test_data, stimulus_range,
+                    gd_pars,
+                    omega=omega,
+                    dof=dof,
+                    normalize=False)
+
+            print(pdf)
+            pdfs.append(pdf)
 
     pdfs = pd.concat(pdfs)        
 
@@ -153,9 +217,10 @@ if __name__ == '__main__':
     parser.add_argument('--smoothed', action='store_true')
     parser.add_argument('--n_voxels', type=int)
     parser.add_argument('--fit_responses', action='store_true')
+    parser.add_argument('--separate_sigmas', action='store_true',
+                        help='Whether to fit separate sigmas for narrow and wide conditions')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--spherical_noise', action='store_true')
     args = parser.parse_args()
 
-    main(subject=args.subject, model_label=args.model_label, bids_folder=args.bids_folder, smoothed=args.smoothed, debug=args.debug, fit_responses=args.fit_responses, n_voxels=args.n_voxels,
-         spherical_noise=args.spherical_noise)
+    main(subject=args.subject, model_label=args.model_label, bids_folder=args.bids_folder, smoothed=args.smoothed, debug=args.debug, fit_responses=args.fit_responses, n_voxels=args.n_voxels, spherical_noise=args.spherical_noise, separate_sigmas=args.separate_sigmas)
