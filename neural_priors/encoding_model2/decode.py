@@ -49,7 +49,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
         key += '.fit_responses'
 
     if separate_sigmas:
-        key += '.seperate_sigmas'
+        key += '.separate_sigmas'
 
     target_dir = bids_folder / 'derivatives' / 'decoding2' / key / f'sub-{subject}' / 'func'
 
