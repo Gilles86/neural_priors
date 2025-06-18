@@ -150,6 +150,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
                     init_dof=10.0,
                     method='t',
                     learning_rate=0.05,
+                    spherical=spherical_noise,
                     max_n_iterations=20000 if not debug else 100)
 
             print('DOF narrow', dof_narrow)
@@ -168,6 +169,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
                     init_dof=10.0,
                     method='t',
                     learning_rate=0.05,
+                    spherical=spherical_noise,
                     max_n_iterations=20000 if not debug else 100)
 
             print('DOF wide', dof_wide)
@@ -190,6 +192,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
                     init_dof=10.0,
                     method='t',
                     learning_rate=0.05,
+                    spherical=spherical_noise,
                     max_n_iterations=20000 if not debug else 100)
 
             print('DOF', dof)
