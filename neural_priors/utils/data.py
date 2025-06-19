@@ -354,11 +354,11 @@ class Subject(object):
         if (session is not None) and (not cross_validated):
             raise ValueError('Session must be None')
 
-        dir = 'encoding_model'
+        dir = 'encoding_models1'
 
         dir += f'.model{model_label}'
         
-        if sensory_space == 'natural':
+        if sensory_space in ['natural', 'gaussian']:
             dir += '.gaussian'
         elif sensory_space == 'log':
             dir += '.logspace'
@@ -424,9 +424,12 @@ class Subject(object):
 
         return parameters
 
-    def get_prf_parameters_volume2(self, model_label, smoothed=True, roi=None, response_fit=False, return_image=False):
+    def get_prf_parameters_volume2(self, model_label, smoothed=True, roi=None, response_fit=False, return_image=False,
+                                   raw=False, par_keys=None):
 
-        par_keys = ['mu', 'sd', 'alpha', 'delta_wide', 'lower_bound_range', 'amplitude', 'baseline']
+        if par_keys is None:
+            par_keys = ['mu', 'sd', 'delta_wide', 'amplitude', 'baseline']
+
 
         # Create target folder
         key = f'model{model_label}'
@@ -458,6 +461,21 @@ class Subject(object):
         pars.append(pd.Series(masker.transform(op.join(cv_dir, f'sub-{self.subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')).squeeze(), name=('cvr2', None)))
 
         pars = pd.concat(pars, axis=1, names=['parameter', 'range'])
+
+        if raw:
+
+            if model_label == 15:
+
+                parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude']
+                pars[('alpha',0 )] = 1e-6
+                pars[('lower_bound',0 )] = 10.
+                pars[('sd_scale', 0)] = pars[('sd', 'wide')] / pars[('sd', 'narrow')]
+                pars = pars[[('mu', 'narrow'), ('delta_wide', 'narrow'), ('lower_bound', 0), ('baseline', 'narrow'), ('sd', 'narrow'), ('sd_scale', 0), ('amplitude', 'narrow')]]
+
+                pars.columns = parameter_labels
+
+            else:
+                raise ValueError('raw is not implemented for this model')
 
         if return_image:
             return masker.inverse_transform(pars.T)
