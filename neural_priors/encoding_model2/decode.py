@@ -178,9 +178,14 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
                     omega=omega_wide,
                     dof=dof_wide,
                     normalize=False)
-            pdfs.append(pd.concat([pdf_narrow, pdf_wide], axis=1))
 
+            pdf = np.zeros((len(test_data), len(stimulus_range)),  dtype=np.float32)
 
+            pdf[test_narrow_ix, :] = pdf_narrow
+            pdf[test_wide_ix, :] = pdf_wide
+
+            pdf = pd.DataFrame(pdf, index=test_data.index, columns=pdf_narrow.columns)
+            pdfs.append(pdf)
 
         else:
             model.init_pseudoWWT(stimulus_range, gd_pars)
