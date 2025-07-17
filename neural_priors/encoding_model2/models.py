@@ -192,6 +192,7 @@ class LinearScalingModel(AlphaGaussianPRF):
                  separate_sds=False,
                  separate_amplitudes=False,
                  rescale_baseline=False,
+                 sd_natural=False,
                  **kwargs):
 
 
@@ -213,6 +214,8 @@ class LinearScalingModel(AlphaGaussianPRF):
         self.separate_amplitudes = separate_amplitudes
         self.rescale_baseline = rescale_baseline
         self.separate_sds = separate_sds
+
+        self.natural_sd = sd_natural
 
         self.parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline']
 
@@ -248,12 +251,27 @@ class LinearScalingModel(AlphaGaussianPRF):
     @tf.function
     def _basis_predictions_without_amplitude(self, paradigm, parameters):
 
-        def f_x(x, mu_x, sigma_mu):
-            """ Computes p_x(x | mu_x, sigma_x) using the given formula. """
-            mu_alpha_x = tf.math.log(x)  # Using your transformation
-            mu_alpha_mu = tf.math.log(mu_x)  # Using your transformation
-            exponent = -tf.square(mu_alpha_x - mu_alpha_mu) / (2 * tf.square(sigma_mu))
-            return tf.exp(exponent)
+        
+        if self.natural_sd:
+            def f_x(x, mu_x, sigma_mu_nat):
+                """
+                Computes p_x(x | mu_x, sigma_mu_nat), where sigma_mu_nat is the stddev in natural space.
+                """
+                # Convert natural-space stddev to log-space stddev
+                sigma_mu_log = tf.sqrt(tf.math.log(1.0 + tf.square(sigma_mu_nat / mu_x)))
+
+                mu_alpha_x = tf.math.log(x)
+                mu_alpha_mu = tf.math.log(mu_x)
+                exponent = -tf.square(mu_alpha_x - mu_alpha_mu) / (2 * tf.square(sigma_mu_log))
+                return tf.exp(exponent)
+
+        else:
+            def f_x(x, mu_x, sigma_mu):
+                """ Computes p_x(x | mu_x, sigma_x) using the given formula. """
+                mu_alpha_x = tf.math.log(x)  # Using your transformation
+                mu_alpha_mu = tf.math.log(mu_x)  # Using your transformation
+                exponent = -tf.square(mu_alpha_x - mu_alpha_mu) / (2 * tf.square(sigma_mu))
+                return tf.exp(exponent)
 
         # Extract stimulus feature values
         x = paradigm[..., tf.newaxis, 0]
