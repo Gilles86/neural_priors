@@ -2,7 +2,7 @@ import os
 import os.path as op
 import argparse
 from neural_priors.utils.data import Subject
-from braincoder.models import RegressionGaussianPRF, RegressionAlphaGaussianPRF
+from braincoder.models import RegressionGaussianPRF, RegressionAlphaGaussianPRF, EncodingRegressionModel
 from braincoder.optimize import ParameterFitter
 import numpy as np
 from braincoder.utils import get_rsq
@@ -60,7 +60,7 @@ def main(subject, smoothed, model_label=4, bids_folder='/data/ds-neuralpriors', 
         r2 = get_rsq(train_data, pred)
 
         # Out-of-set predictions
-        if model_label not in [12, 13]:
+        if isinstance(model, EncodingRegressionModel):
             model.set_paradigm(test_paradigm)
 
         pred = model.predict(parameters=gd_pars, paradigm=test_paradigm)
