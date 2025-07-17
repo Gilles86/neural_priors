@@ -120,7 +120,7 @@ def get_grid(model_label):
         elif model_label in [25]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes
 
-def fit_model(model_label, model, data, paradigm, max_n_iterations=1000):
+def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_brain=False):
 
     # Fit model
     fitter = ParameterFitter(model, data, paradigm)
@@ -325,12 +325,15 @@ def get_paradigm(sub, fit_responses=False):
     return paradigm
 
 def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', debug=False, roi='NPCr',
-         fit_responses=False):
+         fit_responses=False, whole_brain=False):
 
     max_n_iterations = 100 if debug else 5000
 
     # Create target folder
     key = f'model{model_label}'
+
+    if whole_brain:
+        key += '.whole_brain'
 
     if smoothed:
         key += '.smoothed'
@@ -348,7 +351,12 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
     paradigm = get_paradigm(sub, fit_responses=fit_responses)
 
     data = sub.get_single_trial_estimates(session=None, smoothed=smoothed)
-    masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+    
+    if whole_brain:
+        masker = sub.get_brain_mask(epi_space=True, return_masker=True)
+    else:
+        masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+
     data = pd.DataFrame(masker.fit_transform(data), index=paradigm.index).astype(np.float32)
 
     # Get model
@@ -380,8 +388,9 @@ if __name__ == '__main__':
     parser.add_argument('--bids_folder', default='/data/ds-neuralpriors')
     parser.add_argument('--smoothed', action='store_true')
     parser.add_argument('--fit_responses', action='store_true')
+    parser.add_argument('--whole_brain', action='store_true')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
     main(args.subject, model_label=args.model_label, smoothed=args.smoothed, bids_folder=args.bids_folder, debug=args.debug,
-         fit_responses=args.fit_responses)
+         fit_responses=args.fit_responses, whole_brain=args.whole_brain)

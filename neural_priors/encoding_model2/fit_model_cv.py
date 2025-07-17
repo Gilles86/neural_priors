@@ -12,12 +12,15 @@ from braincoder.models import RegressionGaussianPRF
 from fit_model import get_paradigm, get_model, fit_model
 
 def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', gaussian=True, debug=False, roi='NPCr',
-         fit_responses=False):
+         fit_responses=False, whole_brain=False):
 
     max_n_iterations = 100 if debug else 5000
 
     # Create target folder
     key = f'model{model_label}.cv'
+
+    if whole_brain:
+        key += '.whole_brain'    
 
     if smoothed:
         key += '.smoothed'
@@ -38,7 +41,12 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
     paradigm = paradigm.astype(np.float32).droplevel(['run', 'trial_nr', 'subject'])    
 
     data = sub.get_single_trial_estimates(session=None, smoothed=smoothed)
-    masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+    
+    if whole_brain:
+        masker = sub.get_brain_mask(epi_space=True, return_masker=True)   
+    else:
+        masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+
     data = pd.DataFrame(masker.fit_transform(data), index=paradigm.index).astype(np.float32)
 
     all_cvr2 = []
@@ -77,7 +85,8 @@ if __name__ == '__main__':
     parser.add_argument('--smoothed', action='store_true')
     parser.add_argument('--fit_responses', action='store_true')
     parser.add_argument('--debug', action='store_true')
+    parser.add_argument('--whole_brain', action='store_true')
     args = parser.parse_args()
 
     main(args.subject, model_label=args.model_label, smoothed=args.smoothed, bids_folder=args.bids_folder, debug=args.debug,
-         fit_responses=args.fit_responses)
+         fit_responses=args.fit_responses, whole_brain=args.whole_brain)
