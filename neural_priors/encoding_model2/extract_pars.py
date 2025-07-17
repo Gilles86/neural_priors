@@ -17,7 +17,8 @@ def main(roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=True, fit_res
     subject_ids = get_all_subject_ids()
     model_labels = list(range(0, 15))
 
-    model_labels = [0, 3, 4, 5] + list(range(12, 25))
+    # model_labels = [0, 3, 4, 5] + list(range(12, 25))
+    model_labels = [0,3,4,5, 14, 15, 25]
     subjects = [Subject(subject_id=subject_id) for subject_id in subject_ids]
     pars = []
 
