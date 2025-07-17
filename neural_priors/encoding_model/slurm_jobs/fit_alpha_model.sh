@@ -4,11 +4,11 @@
 #SBATCH --time=15:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=32G  # Request more memory
-#SBATCH --output=/home/gdehol/logs/nprf_fit_joint_alphagaussian_%A-%a.txt  # Default SLURM log
+#SBATCH --output=/scratch/gdehol/logs/nprf_fit_joint_alphagaussian_%A-%a.txt  # Default SLURM log
 
 # Load environment
 . $HOME/init_conda.sh
-source activate neaural_priors2
+source activate neural_priors2
 
 # Get participant label and model number
 PARTICIPANT_LABEL=$(printf "%02d" $SLURM_ARRAY_TASK_ID)
@@ -27,7 +27,7 @@ for arg in "$@"; do
 done
 
 # Define dynamic log file
-LOGFILE="/home/gdehol/logs/nprf_fit_joint_alphagaussian_${SLURM_ARRAY_JOB_ID}-${SLURM_ARRAY_TASK_ID}_model-${MODEL}_${SMOOTHED_SUFFIX}.txt"
+LOGFILE="/scratch/gdehol/logs/nprf_fit_joint_alphagaussian_${SLURM_ARRAY_JOB_ID}-${SLURM_ARRAY_TASK_ID}_model-${MODEL}_${SMOOTHED_SUFFIX}.txt"
 
 # Run the encoding model fit and redirect output manually
 python $HOME/git/neural_priors/neural_priors/encoding_model/fit_alpha_model.py \

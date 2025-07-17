@@ -4,7 +4,7 @@
 #SBATCH --time=60:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=32G  # Request more memory
-#SBATCH --output=/home/gdehol/logs/nprf_fit_joint_alphagaussian_cv_%A-%a.txt  # Default SLURM log
+#SBATCH --output=/scratch/gdehol/logs/nprf_fit_joint_alphagaussian_cv_%A-%a.txt  # Default SLURM log
 
 # Load environment
 . $HOME/init_conda.sh
@@ -27,7 +27,7 @@ for arg in "$@"; do
 done
 
 # Define dynamic log file
-LOGFILE="/home/gdehol/logs/nprf_fit_joint_alphagaussian_${SLURM_ARRAY_JOB_ID}-${SLURM_ARRAY_TASK_ID}_model-${MODEL}_${SMOOTHED_SUFFIX}.txt"
+LOGFILE="/scratch/gdehol/logs/nprf_fit_joint_alphagaussian_cv_${SLURM_ARRAY_JOB_ID}-${SLURM_ARRAY_TASK_ID}_model-${MODEL}_${SMOOTHED_SUFFIX}.txt"
 
 # Run the encoding model fit and redirect output manually
 python $HOME/git/neural_priors/neural_priors/encoding_model/fit_alpha_model_cv.py \
