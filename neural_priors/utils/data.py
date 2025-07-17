@@ -464,7 +464,7 @@ class Subject(object):
 
         if raw:
 
-            if model_label == 15:
+            if model_label in [15, 18]:
 
                 parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude']
                 pars[('alpha',0 )] = 1e-6
@@ -473,7 +473,7 @@ class Subject(object):
                 pars = pars[[('mu', 'narrow'), ('delta_wide', 'narrow'), ('lower_bound', 0), ('baseline', 'narrow'), ('sd', 'narrow'), ('sd_scale', 0), ('amplitude', 'narrow')]]
 
                 pars.columns = parameter_labels
-
+            
             else:
                 raise ValueError('raw is not implemented for this model')
 
