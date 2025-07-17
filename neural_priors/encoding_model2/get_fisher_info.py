@@ -7,7 +7,7 @@ import numpy as np
 from braincoder.utils import get_rsq
 from braincoder.optimize import ResidualFitter
 
-def main(subject, model_label, smoothed, fit_responses, bids_folder, roi='NPCr'):
+def main(subject, model_label, smoothed, fit_responses, bids_folder, spherical_noise=False, roi='NPCr', separate_sigmas=False):
 
     sub = Subject(subject, bids_folder=bids_folder)
 
@@ -24,6 +24,12 @@ def main(subject, model_label, smoothed, fit_responses, bids_folder, roi='NPCr')
     if smoothed:
         key += '.smoothed'
 
+    if spherical_noise:
+        key += '.spherical_noise'
+
+    if separate_sigmas:
+        key += '.separate_sigmas'
+
     if fit_responses:
         key += '.fit_responses'
 
@@ -39,31 +45,64 @@ def main(subject, model_label, smoothed, fit_responses, bids_folder, roi='NPCr')
 
     data = data.loc[:, mask]
 
-    model = get_model(model_label)
 
-    pred = model.predict(paradigm, pars)
+    # pred = model.predict(paradigm, pars)
 
-    r2 = get_rsq(data, pred)
+    # r2 = get_rsq(data, pred)
 
-    print(r2.sort_values())
+    # print(r2.sort_values())
 
     narrow_stimuli = np.concatenate((np.arange(10, 26, 1)[:, np.newaxis], np.zeros(16)[:, np.newaxis]), axis=1)
     wide_stimuli = np.concatenate((np.arange(10, 41, 1)[:, np.newaxis], np.ones(31)[:, np.newaxis]), axis=1)
     stimuli = np.concatenate((narrow_stimuli, wide_stimuli), axis=0).astype(np.float32)
 
-    resid_fitter = ResidualFitter(model, data, paradigm, pars)
+    
+    if separate_sigmas:
+        narrow_ix = paradigm['range'] == 0.0
+        wide_ix = paradigm['range'] == 1.0
 
-    model.init_pseudoWWT(stimuli, pars)
+        narrow_model = get_model(model_label)
+        wide_model = get_model(model_label)
 
-    omega, dof = resid_fitter.fit()
+        narrow_model.init_pseudoWWT(narrow_stimuli, pars)
+        wide_model.init_pseudoWWT(wide_stimuli, pars)
 
-    print(omega)
-    print(dof)
+        resid_fitter_narrow = ResidualFitter(narrow_model, data[narrow_ix], paradigm[narrow_ix], pars)
+        resid_fitter_wide = ResidualFitter(wide_model, data[wide_ix], paradigm[wide_ix], pars)
 
-    pd.DataFrame(omega).to_csv(target_dir / f'sub-{subject:02d}_desc-omega.tsv', sep='\t')
-    fisher_information = model.get_fisher_information(stimuli, omega)
+        omega_narrow, dof_narrow = resid_fitter_narrow.fit(spherical=spherical_noise)
+        omega_wide, dof_wide = resid_fitter_wide.fit(spherical=spherical_noise)
 
-    fisher_information = fisher_information.to_frame('fisher_information')
+        pd.DataFrame(omega_narrow).to_csv(target_dir / f'sub-{subject:02d}_desc-omega_narrow.tsv', sep='\t')
+        pd.DataFrame(omega_wide).to_csv(target_dir / f'sub-{subject:02d}_desc-omega_wide.tsv', sep='\t')
+
+        pd.Series(resid_fitter_narrow.fitted_omega_parameters).to_csv(target_dir / f'sub-{subject:02d}_desc-omega_parameters_narrow.tsv', sep='\t')
+        pd.Series(resid_fitter_wide.fitted_omega_parameters).to_csv(target_dir / f'sub-{subject:02d}_desc-omega_parameters_wide.tsv', sep='\t')
+
+        fisher_information_narrow = narrow_model.get_fisher_information(stimuli, omega_narrow)
+        fisher_information_wide = wide_model.get_fisher_information(stimuli, omega_wide)
+
+        fisher_information = pd.concat([fisher_information_narrow, fisher_information_wide], axis=0)
+
+        # fisher_information.rename(columns={'Fisher information': 'fisher_information'}, inplace=True)
+        # fisher_information = fisher_information.to_frame('fisher_information')
+
+        fisher_information.name = 'fisher_information'
+
+    else:
+
+        model = get_model(model_label)
+        resid_fitter = ResidualFitter(model, data, paradigm, pars)
+
+        model.init_pseudoWWT(stimuli, pars)
+
+        omega, dof = resid_fitter.fit(spherical=spherical_noise)
+
+        pd.DataFrame(omega).to_csv(target_dir / f'sub-{subject:02d}_desc-omega.tsv', sep='\t')
+        fisher_information = model.get_fisher_information(stimuli, omega)
+
+        fisher_information = fisher_information.to_frame('fisher_information')
+
     fisher_information.index.names = ['n', 'wide']
     fisher_information = fisher_information.reset_index()
 
@@ -75,8 +114,11 @@ if __name__ == "__main__":
     parser.add_argument("subject", type=int, help="Subject ID")
     parser.add_argument("--model_label", default=15, type=int, help="Model label")
     parser.add_argument("--smoothed", action='store_true', help="Whether the data is smoothed")
+    parser.add_argument("--spherical_noise", action='store_true', help="Whether noise is spherical")
     parser.add_argument("--fit_responses", action='store_true', help="Whether to fit responses")
     parser.add_argument("--bids_folder", default='/data/ds-neuralpriors', type=Path, help="BIDS folder path")
+    parser.add_argument("--separate_sigmas", action='store_true', help="Whether to fit separate sigmas for narrow and wide conditions")
 
     args = parser.parse_args()
-    main(args.subject, args.model_label, args.smoothed, args.fit_responses, args.bids_folder)
+    main(args.subject, args.model_label, args.smoothed, args.fit_responses, args.bids_folder, spherical_noise=args.spherical_noise,
+         separate_sigmas=args.separate_sigmas)
