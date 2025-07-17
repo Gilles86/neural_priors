@@ -49,46 +49,40 @@ def main(subject, model_label, smoothed, fit_responses, bids_folder, spherical_n
     narrow_stimuli.index.name = 'stimulus'
     wide_stimuli.index.name = 'stimulus'
 
-    narrow_ix = paradigm['range'] == 0.0
-    wide_ix = paradigm['range'] == 1.0
+    stimuli = pd.concat((narrow_stimuli, wide_stimuli), axis=0, keys=['narrow', 'wide'], names=['range'])
 
-    model_narrow = get_model(model_label)
-    resid_fitter_narrrow = ResidualFitter(model_narrow, data.loc[narrow_ix], paradigm.loc[narrow_ix], pars)
+    model = get_model(model_label)
+    model.init_pseudoWWT(narrow_stimuli, pars)
 
-    model_wide = get_model(model_label)
-    resid_fitter_wide = ResidualFitter(model_wide, data.loc[wide_ix], paradigm.loc[wide_ix], pars)
+    # resid_fitter = ResidualFitter(model, data, paradigm, stimuli, masker=masker, fit_responses=fit_responses)
+    resid_fitter = ResidualFitter(model, data, paradigm, pars)
 
-    model_narrow.init_pseudoWWT(narrow_stimuli, pars)
-    model_wide.init_pseudoWWT(wide_stimuli, pars)
+    omega, dof = resid_fitter.fit(max_n_iterations=5000, spherical=spherical_noise, method='t', init_dof=10.0,)
 
-    omega_narrow, dof_narrow = resid_fitter_narrrow.fit(max_n_iterations=5000, spherical=spherical_noise, method='t', init_dof=10.0,)
-    omega_wide, dof_wide = resid_fitter_wide.fit(max_n_iterations=5000, spherical=spherical_noise, method='t', init_dof=10.0,)
 
-    # omega, dof = resid_fitter.fit()
+    simulated_data_narrow = model.simulate(narrow_stimuli, pars, noise=omega, dof=dof, n_repeats=1000)
+    simulated_data_wide = model.simulate(wide_stimuli, pars, noise=omega, dof=dof, n_repeats=1000)
 
-    print(omega_narrow, dof_narrow)
-    print(omega_wide, dof_wide)
 
-    simulated_data_narrow = model_narrow.simulate(narrow_stimuli, pars, noise=omega_narrow, dof=dof_narrow, n_repeats=1000)
-    simulated_data_wide = model_narrow.simulate(wide_stimuli, pars, noise=omega_wide, dof=dof_wide, n_repeats=1000)
-
-    p_stim_narrow =  model_narrow.get_stimulus_pdf(simulated_data_narrow, parameters=pars, omega=omega_narrow, dof=dof_narrow, stimulus_range=narrow_stimuli, normalize=False).droplevel(1, 1)
-    p_stim_wide =  model_wide.get_stimulus_pdf(simulated_data_wide, parameters=pars, omega=omega_wide, dof=dof_wide, stimulus_range=wide_stimuli, normalize=False).droplevel(1, 1)
+    p_stim_narrow =  model.get_stimulus_pdf(simulated_data_narrow, parameters=pars, omega=omega, dof=dof, stimulus_range=narrow_stimuli, normalize=False).droplevel(1, 1)
+    p_stim_wide =  model.get_stimulus_pdf(simulated_data_wide, parameters=pars, omega=omega, dof=dof, stimulus_range=wide_stimuli, normalize=False).droplevel(1, 1)
 
     E_narrow = get_expected_value(p_stim_narrow, normalize=True).to_frame().join(narrow_stimuli)
     E_wide = get_expected_value(p_stim_wide, normalize=True).to_frame().join(wide_stimuli)
 
-    sd_narrow = get_sd_posterior(p_stim_narrow, normalize=True).to_frame().join(narrow_stimuli)
-    sd_wide = get_sd_posterior(p_stim_wide, normalize=True).to_frame().join(wide_stimuli)
 
-
-    E = pd.concat((E_narrow, E_wide), axis=0, keys=['narrow', 'wide'], names=['range'])
+    E = pd.concat((E_narrow, E_wide), axis=0, keys=['narrow', 'wide'], names=['range']).drop(columns=['range'])
     E['error'] = E['E'] - E['n']
-    E['error'] = E['error'].abs()
+    E['abs(error)'] = E['error'].abs()
 
-    sd = pd.concat((sd_narrow, sd_wide), axis=0, keys=['narrow', 'wide'], names=['range'])
-    E.to_csv(target_dir / f'sub-{subject:02d}_desc-expected_value.tsv', sep='\t')
-    sd.to_csv(target_dir / f'sub-{subject:02d}_desc-sd.tsv', sep='\t')
+    mean_E = E.groupby(['range', 'n'])['E'].mean().to_frame("mean_E")
+    mean_error = E.groupby(['range', 'n'])['error'].mean().to_frame("mean_error")
+    var_E = E.groupby(['range', 'n'])['E'].var().to_frame("var_E")
+    abs_error = E.groupby(['range', 'n'])['abs(error)'].mean().to_frame("mean_abs_error")
+
+    decode_pars = mean_E.join(mean_error).join(var_E).join(abs_error)
+
+    decode_pars.to_csv(target_dir / f'sub-{subject:02d}_desc-expected_error.tsv', sep='\t')
 
 
 if __name__ == "__main__":
