@@ -36,6 +36,9 @@ from neural_priors.encoding_model2.models import AlphaDeltaModel, LinearScalingM
 # Model 25: Like model 4, but slope on widths is fixed at sqrt(2)
 # Model 26: Like model 4, but sigma is defined in natural space and has same slope across voxels
 # Model 27: Like model 4, but sigma is defined in natural space and has slope fixed at 2
+# Model 28: Like model 4, but sigma is defined as FHWM natural space and has same slope across voxels
+# Model 29: Like model 4, but sigma is defined as FWHM natural space and has slope fixed at 2
+# Model 30: Like model 14, but using FWHM in natural space instead of sigma_log
 
 def get_model(model_label):
 
@@ -63,6 +66,8 @@ def get_model(model_label):
         model = LinearScalingModel(separate_amplitudes=True, identity_below_range=True, separate_sds=True, rescale_baseline=False)
     elif model_label in [26, 27]:
         model = LinearScalingModel(separate_amplitudes=False, identity_below_range=True, separate_sds=True, sd_natural=True)
+    elif model_label in [28, 29, 30]:
+        model = LinearScalingModel(separate_amplitudes=False, identity_below_range=True, separate_sds=True, sigma_fwhm=True)
     else:
         model = AlphaDeltaModel()
 
@@ -80,7 +85,7 @@ def get_grid(model_label):
     if model_label in [25]:
         sd_scales = [np.sqrt(2)]
 
-    elif model_label in [27]:
+    elif model_label in [27, 29]:
         sd_scales = [2.0]
 
     else:
@@ -98,7 +103,7 @@ def get_grid(model_label):
 
     if model_label in [0]:
         delta_wides = [1.0]
-    elif model_label in [1, 4, 7, 12, 13, 14, 15, 16, 17, 21, 22, 25, 26, 27]:
+    elif model_label in [1, 4, 7, 12, 13, 14, 15, 16, 17, 21, 22, 25, 26, 27, 28, 29, 30]:
         delta_wides = [2.0]
     elif model_label in [2, 3, 5, 6, 8, 9, 10, 11, 18, 19, 20, 23, 24]:
         delta_wides = np.linspace(.3, 3., 10)
@@ -129,7 +134,7 @@ def get_grid(model_label):
             return modes, delta_wides, intersection_point, baselines, sds, amplitudes, amplitudes_alpha, amplitudes_beta
         elif model_label in [22, 24]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes, amplitudes_alpha, amplitudes_beta
-        elif model_label in [25, 26, 27]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
+        elif model_label in [25, 26, 27, 28, 29, 30]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes
 
 def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_brain=False):
@@ -172,13 +177,13 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_b
         shared_pars += ['baseline_ratio']
 
     # MODELS ABOVE 14 (LinearScalingModel)
-    if model_label in [15, 16, 17, 21, 22, 25, 26, 27]:
+    if model_label in [15, 16, 17, 21, 22, 25, 26, 27, 28, 29, 30]:
         fixed_pars += ['delta_wide']
 
-    if model_label in [25, 27]:
+    if model_label in [25, 27, 29]:
         fixed_pars += ['sd_wide_scale']
 
-    if model_label in [15, 17, 18, 20, 22, 24, 26]:
+    if model_label in [15, 17, 18, 20, 22, 24, 26, 28]:
         shared_pars += ['sd_wide_scale']
 
     if model_label in [16, 17, 19, 20]:
@@ -301,7 +306,7 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
             pars[('baseline', 'narrow')] = estimated_parameters['baseline']
             pars[('baseline', 'wide')] = estimated_parameters['baseline']
 
-        if model_label in [15, 17, 18, 20, 22, 24, 25, 26, 27]:
+        if model_label in [15, 17, 18, 20, 22, 24, 25, 26, 27, 28, 29, 30]:
             pars[('sd', 'narrow')] = estimated_parameters['sd_narrow']
             pars[('sd', 'wide')] = estimated_parameters['sd_wide_scale'] * estimated_parameters['sd_narrow']
         else:

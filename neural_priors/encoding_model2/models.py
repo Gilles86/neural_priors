@@ -193,8 +193,12 @@ class LinearScalingModel(AlphaGaussianPRF):
                  separate_amplitudes=False,
                  rescale_baseline=False,
                  sd_natural=False,
+                 sigma_fwhm=False,
                  **kwargs):
 
+
+        if sigma_fwhm & sd_natural:
+            raise ValueError("Cannot use both sigma_fwhm and sd_natural at the same time. Use one of them.")
 
         if allow_neg_amplitudes:
             raise NotImplementedError("Negative amplitudes are not allowed for LinearScalingModel")
@@ -216,6 +220,7 @@ class LinearScalingModel(AlphaGaussianPRF):
         self.separate_sds = separate_sds
 
         self.natural_sd = sd_natural
+        self.sigma_fwhm = sigma_fwhm
 
         self.parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline']
 
@@ -263,6 +268,23 @@ class LinearScalingModel(AlphaGaussianPRF):
                 mu_alpha_x = tf.math.log(x)
                 mu_alpha_mu = tf.math.log(mu_x)
                 exponent = -tf.square(mu_alpha_x - mu_alpha_mu) / (2 * tf.square(sigma_mu_log))
+                return tf.exp(exponent)
+
+        elif self.sigma_fwhm:
+            def f_x(x, mu_x, fwhm):
+                """
+                Computes p_x(x | mu_x, fwhm), where fwhm is the full width at half maximum
+                of the lognormal distribution with mean mu_x in natural space.
+                """
+                two = tf.constant(2.0, dtype=tf.float32)
+                log2 = tf.math.log(two)
+                
+                # Compute log-space sigma from FWHM
+                sigma_mu_log = tf.asinh(fwhm / (two * mu_x)) / tf.sqrt(two * log2)
+
+                mu_alpha_x = tf.math.log(x)
+                mu_alpha_mu = tf.math.log(mu_x)
+                exponent = -tf.square(mu_alpha_x - mu_alpha_mu) / (two * tf.square(sigma_mu_log))
                 return tf.exp(exponent)
 
         else:
