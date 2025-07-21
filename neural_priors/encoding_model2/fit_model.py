@@ -79,6 +79,8 @@ def get_grid(model_label):
     
     if model_label in [26, 27]:
         sds = np.linspace(2, 30, 30)
+    elif model_label in [28, 29, 30]:
+        sds = np.linspace(4, 60, 30) # Empirically, FWHM is roughly twice the sigma in natural space
     else:
         sds = np.linspace(np.log(2), np.log(30), 30)
 
