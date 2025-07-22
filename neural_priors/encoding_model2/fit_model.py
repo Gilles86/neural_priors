@@ -39,6 +39,7 @@ from neural_priors.encoding_model2.models import AlphaDeltaModel, LinearScalingM
 # Model 28: Like model 4, but sigma is defined as FHWM natural space and has same slope across voxels
 # Model 29: Like model 4, but sigma is defined as FWHM natural space and has slope fixed at 2
 # Model 30: Like model 14, but using FWHM in natural space instead of sigma_log
+# Model 31: like model 25, but slope is fixed at 1.287794, whcih is the mean of the slopes across subjects according to model 15
 
 def get_model(model_label):
 
@@ -54,7 +55,7 @@ def get_model(model_label):
         model = AlphaDeltaModel(separate_amplitudes=True, rescale_baseline=True, identity_below_range=True)
     elif model_label in [14]:
         model = AlphaDeltaModel(separate_sds=True, identity_below_range=True)
-    elif model_label in [15, 18, 25]:
+    elif model_label in [15, 18, 25, 31]:
         model = LinearScalingModel(separate_amplitudes=False, identity_below_range=True, separate_sds=True)
     elif model_label in [16, 19]:
         model = LinearScalingModel(separate_amplitudes=True, identity_below_range=True, separate_sds=False, rescale_baseline=True)
@@ -77,15 +78,18 @@ def get_grid(model_label):
 
     modes = np.linspace(5, 45, 41)
     
-    if model_label in [26, 27]:
+    if model_label in [26, 27]: # sigma in natural space
         sds = np.linspace(2, 30, 30)
-    elif model_label in [28, 29, 30]:
+    elif model_label in [28, 29, 30]: # FWHM in natural space
         sds = np.linspace(4, 60, 30) # Empirically, FWHM is roughly twice the sigma in natural space
-    else:
+    else:                       # sigma in log space
         sds = np.linspace(np.log(2), np.log(30), 30)
 
     if model_label in [25]:
         sd_scales = [np.sqrt(2)]
+
+    elif model_label in [31]:
+        sd_scales = [1.287794]
 
     elif model_label in [27, 29]:
         sd_scales = [2.0]
@@ -108,7 +112,7 @@ def get_grid(model_label):
 
     if model_label in [0]:
         delta_wides = [1.0]
-    elif model_label in [1, 4, 7, 12, 13, 14, 15, 16, 17, 21, 22, 25, 26, 27, 28, 29, 30]:
+    elif model_label in [1, 4, 7, 12, 13, 14, 15, 16, 17, 21, 22, 25, 26, 27, 28, 29, 30, 31]:
         delta_wides = [2.0]
     elif model_label in [2, 3, 5, 6, 8, 9, 10, 11, 18, 19, 20, 23, 24]:
         delta_wides = np.linspace(.3, 3., 10)
@@ -139,7 +143,7 @@ def get_grid(model_label):
             return modes, delta_wides, intersection_point, baselines, sds, amplitudes, amplitudes_alpha, amplitudes_beta
         elif model_label in [22, 24]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes, amplitudes_alpha, amplitudes_beta
-        elif model_label in [25, 26, 27, 28, 29, 30]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
+        elif model_label in [25, 26, 27, 28, 29, 30, 31]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes
 
 def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_brain=False):
@@ -182,10 +186,10 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_b
         shared_pars += ['baseline_ratio']
 
     # MODELS ABOVE 14 (LinearScalingModel)
-    if model_label in [15, 16, 17, 21, 22, 25, 26, 27, 28, 29, 30]:
+    if model_label in [15, 16, 17, 21, 22, 25, 26, 27, 28, 29, 30, 31]:
         fixed_pars += ['delta_wide']
 
-    if model_label in [25, 27, 29]:
+    if model_label in [25, 27, 29, 31]:
         fixed_pars += ['sd_wide_scale']
 
     if model_label in [15, 17, 18, 20, 22, 24, 26, 28]:
@@ -311,7 +315,7 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
             pars[('baseline', 'narrow')] = estimated_parameters['baseline']
             pars[('baseline', 'wide')] = estimated_parameters['baseline']
 
-        if model_label in [15, 17, 18, 20, 22, 24, 25, 26, 27, 28, 29, 30]:
+        if model_label in [15, 17, 18, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31]:
             pars[('sd', 'narrow')] = estimated_parameters['sd_narrow']
             pars[('sd', 'wide')] = estimated_parameters['sd_wide_scale'] * estimated_parameters['sd_narrow']
         else:
