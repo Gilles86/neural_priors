@@ -90,6 +90,9 @@ def get_grid(model_label):
     elif model_label in [27, 29]:
         sd_scales = [2.0]
 
+    elif model_label in [28, 30]:
+        sd_scales = [.6, .8, 1., 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6, 2.8]
+
     else:
         # sd_scales = [1.]
         sd_scales = [.6, .8, 1., 1.2, 1.4, 1.6]
