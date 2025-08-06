@@ -15,6 +15,7 @@ dependencies:
   - jupyter
   - pip
   - pingouin
+  - nipype
   - pip:
       - tensorflow-addons
       - tqdm

@@ -21,35 +21,30 @@ def transform_fsaverage(in_file, fs_hemi, source_subject, bids_folder):
         r = sxfm.run()
         return r
 
-def main(subject, model_label, bids_folder, smoothed, gaussian=True, keys_to_extract=['cvr2']):
+def main(subject, model_label, bids_folder, smoothed, keys_to_extract=None):
 
     sub = Subject(subject, bids_folder=bids_folder)
     surfinfo = sub.get_surf_info()
 
-    prf_pars_volume = sub.get_prf_parameters_volume(model_label=model_label, smoothed=smoothed, return_image=True, cross_validated=False) 
+    prf_pars_volume = sub.get_prf_parameters_volume2(model_label=model_label, smoothed=smoothed, return_image=True,
+                                                     par_keys = ['mu', 'sd', 'amplitude', 'baseline'])
 
-    key = 'encoding_model'
-
-    key += f'.model{model_label}'
-
-    if gaussian:
-        key += '.gaussian'
-    else:
-        raise NotImplementedError
+    key = f'model{model_label}.whole_brain'
 
     if smoothed:
         key += '.smoothed'
 
-    target_dir = op.join(bids_folder, 'derivatives', key, f'sub-{subject}', 'func')
+    target_dir = op.join(bids_folder, 'derivatives', 'encoding_models2', key, f'sub-{subject}', 'func')
 
     print(f'Writing to {target_dir}')
 
-    if gaussian:
-        par_keys = ['mu.narrow', 'mu.wide',
-                    'sd.narrow', 'sd.wide',
-                    'amplitude.narrow', 'amplitude.wide',
-                    'baseline.narrow', 'baseline.wide',
-                    'r2', 'cvr2']
+    par_keys = ['mu.narrow', 'mu.wide',
+                'sd.narrow', 'sd.wide',
+                'amplitude.narrow', 'amplitude.wide',
+                'baseline.narrow', 'baseline.wide',
+                'r2', 'cvr2']
+
+    #	mu	sd	delta_wide	amplitude	baseline	r2	cvr2
 
     if keys_to_extract is None:
         keys_to_extract = par_keys
@@ -67,7 +62,10 @@ def main(subject, model_label, bids_folder, smoothed, gaussian=True, keys_to_ext
 
                 nb.save(im, target_fn)
 
-                transform_fsaverage(target_fn, fs_hemi, f'sub-{subject}', bids_folder)
+                if par not in ['amplitude.narrow', 'amplitude.wide', 'baseline.narrow', 'baseline.wide']:
+                    # Transform to fsaverage
+                    print(f'Transforming {target_fn} to fsaverage')
+                    transform_fsaverage(target_fn, fs_hemi, f'sub-{subject}', bids_folder)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

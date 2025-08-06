@@ -5,13 +5,13 @@ import os
 from nilearn import image, surface
 from nilearn.maskers import NiftiMasker
 from nilearn.masking import apply_mask
-import pkg_resources
+from importlib.resources import files
 import yaml
 from tqdm.contrib.itertools import product
 from itertools import product as product_
 
 def get_all_subject_ids(only_full=True):
-    with pkg_resources.resource_stream('neural_priors', '/data/subjects.yml') as stream:
+    with files('neural_priors').joinpath('data', 'subjects.yml').open() as stream:
         mapping = yaml.safe_load(stream)
 
         subjects = []
@@ -48,7 +48,8 @@ class Subject(object):
 
     def get_sessions(self):
         assert self.subject_id in get_all_subject_ids(), f'{self.subject_id} not in {get_all_subject_ids()}'
-        with pkg_resources.resource_stream('neural_priors', '/data/subjects.yml') as stream:
+        resource_path = files('neural_priors').joinpath('data/subjects.yml')
+        with open(resource_path, 'r') as stream:
             return yaml.safe_load(stream)[self.subject_id]
 
     def get_behavioral_data(self, session=None, tasks=None, raw=False, add_info=True):
@@ -346,83 +347,7 @@ class Subject(object):
             gaussian=None,
             model_label=1):
 
-        if gaussian is True:
-            sensory_space = 'gaussian'
-        elif gaussian is False:
-            sensory_space = 'logspace'
-
-        if (session is not None) and (not cross_validated):
-            raise ValueError('Session must be None')
-
-        dir = 'encoding_models1'
-
-        dir += f'.model{model_label}'
-        
-        if sensory_space in ['natural', 'gaussian']:
-            dir += '.gaussian'
-        elif sensory_space == 'log':
-            dir += '.logspace'
-        elif sensory_space == 'alpha':
-            dir += '.alpha'
-        else:
-            raise ValueError(f'Unknown sensory space: {sensory_space}')
-
-        if smoothed:
-            dir += '.smoothed'
-
-        if cross_validated:
-            if run is None:
-                raise Exception('Give run')
-
-            dir += '.cv'
-
-        parameters = []
-
-        assert keys is None or 'r2' not in keys, 'r2 is always included'
-        assert keys is None or 'cvr2' not in keys, 'cvr2 is always included'
-
-        if keys is None:
-            if sensory_space in ['natural', 'log']:
-                keys = ['mu', 'sd', 'amplitude', 'baseline']
-            else:
-                keys = ['mu', 'sd', 'alpha', 'amplitude', 'baseline']
-
-                if model_label in range(12, 18):
-                    keys.append('delta_wide')
-                    keys.append('lower_bound_range')
-
-        masker = self.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
-
-        if cross_validated:
-            if session is None:
-                raise ValueError('Session must be given for cross-validated data')
-            fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func',
-                                    'sub-{subject_id}_ses-{session}_run-{run}_desc-{parameter_key}.{range_n}.optim_space-T1w_pars.nii.gz')
-        else:
-            fn_template = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', 'sub-{subject_id}_desc-{parameter_key}.{range_n}.optim_space-T1w_pars.nii.gz')
-
-        for parameter_key, range_n in product_(keys, ['narrow', 'wide']):
-            fn = fn_template.format(parameter_key=parameter_key, run=run, session=session, subject_id=self.subject_id, range_n=range_n)
-            pars = pd.Series(masker.transform(fn).squeeze(), name=(parameter_key, range_n))
-            parameters.append(pars)
-
-
-        r2_fn = op.join(self.bids_folder, 'derivatives', dir, f'sub-{self.subject_id}', 'func', f'sub-{self.subject_id}_desc-r2.optim_space-T1w_pars.nii.gz')
-        cvr2_fn = op.join(self.bids_folder, 'derivatives', dir+'.cv', f'sub-{self.subject_id}', f'func', f'sub-{self.subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')
-
-        parameters.append(pd.Series(masker.transform(r2_fn).squeeze(), name=('r2', None)))
-        keys.append(['r2'])
-
-        if include_cvr2:
-            parameters.append(pd.Series(masker.transform(cvr2_fn).squeeze(), name=('cvr2', None)))
-            keys.append('cvr2')
-
-        parameters =  pd.concat(parameters, axis=1, names=['parameter', 'range']).astype(np.float32)
-
-        if return_image:
-            return masker.inverse_transform(parameters.T)
-
-        return parameters
+        raise NotImplementedError('Use get_prf_parameters_volume2 instead')
 
     def get_prf_parameters_volume2(self, model_label, smoothed=True, roi=None, response_fit=False, return_image=False,
                                    raw=False, par_keys=None):
@@ -433,7 +358,11 @@ class Subject(object):
 
         # Create target folder
         key = f'model{model_label}'
-        cv_key = key + '.cv'
+        cv_key = f'model{model_label}.cv'
+
+        if roi != 'NPCr':
+            key += '.whole_brain'
+            cv_key += '.whole_brain'
 
         if smoothed:
             key += '.smoothed'
@@ -473,7 +402,15 @@ class Subject(object):
                 pars = pars[[('mu', 'narrow'), ('delta_wide', 'narrow'), ('lower_bound', 0), ('baseline', 'narrow'), ('sd', 'narrow'), ('sd_scale', 0), ('amplitude', 'narrow')]]
 
                 pars.columns = parameter_labels
-            
+
+            elif model_label in [31]:
+                parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude']
+                pars[('lower_bound_range',0 )] = 10
+                pars[('sd_scale', 0)] = pars[('sd', 'wide')] / pars[('sd', 'narrow')]
+
+                pars = pars[[('mu', 'narrow'), ('delta_wide', 'narrow'), ('lower_bound_range', 0), ('baseline', 'narrow'), ('sd', 'narrow'), ('sd_scale', 0), ('amplitude', 'narrow')]]
+                pars.columns = parameter_labels
+
             else:
                 raise ValueError('raw is not implemented for this model')
 
@@ -502,42 +439,7 @@ class Subject(object):
         return info
 
     def get_prf_parameters_surf(self, model_label, smoothed=False, hemi=None, space='fsnative', gaussian=True):
-
-        parameter_keys = ['cvr2']
-
-        if hemi is None:
-            prf_l = self.get_prf_parameters_surf(model_label, smoothed, hemi='L', space=space)
-            prf_r = self.get_prf_parameters_surf(model_label, smoothed, hemi='R', space=space)
-            
-            return pd.concat((prf_l, prf_r), axis=0, 
-                    keys=pd.Index(['L', 'R'], name='hemi'))
-        key = 'encoding_model'
-
-        key += f'.model{model_label}'
-
-        if gaussian:
-            key += '.gaussian'
-        else:
-            raise NotImplementedError
-
-        if smoothed:
-            key += '.smoothed'
-
-        parameters = []
-
-        dir = op.join(self.bids_folder, 'derivatives', key, f'sub-{self.subject_id}', 'func')
-        fn_template = op.join(dir, 'sub-{subject_id}_desc-{parameter_key}.optim.nilearn_space-{space}_hemi-{hemi}.func.gii')
-
-        for parameter_key in parameter_keys:
-
-            fn = fn_template.format(parameter_key=parameter_key, subject_id=self.subject_id, hemi=hemi, space=space)
-
-            pars = pd.Series(surface.load_surf_data(fn))
-            pars.index.name = 'vertex'
-
-            parameters.append(pars)
-
-        return pd.concat(parameters, axis=1, keys=parameter_keys, names=['parameter'])
+          raise NotImplementedError('Use get_prf_parameters_surf2 instead')
 
     def get_prf_parameters_surf2(self, model_label, smoothed=False, hemi=None, space='fsnative', fit_responses=False):
 
@@ -551,7 +453,7 @@ class Subject(object):
                     keys=pd.Index(['L', 'R'], name='hemi'))
 
         # Find target folder
-        key = f'model{model_label}'
+        key = f'model{model_label}.whole_brain'
 
         if smoothed:
             key += '.smoothed'
