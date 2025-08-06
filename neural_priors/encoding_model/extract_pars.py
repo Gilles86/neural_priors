@@ -6,50 +6,42 @@ from tqdm.contrib.itertools import product
 import pandas as pd
 
 
-def main(roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=True, space='natural'):
+def main(roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=True, fit_responses=False):
 
-    key = 'summary_encoding_models'
-
-    if space == 'log':
-        key += '.logspace'
-    else:
-        key += '.natural_space'
-
-    if smoothed:
-        key += '.smoothed'
-
-    print(key)
+    key = 'encoding_models2'
 
     target_dir = op.join(bids_folder, 'derivatives', key)
     print(f'Writing to {target_dir}')
     os.makedirs(target_dir, exist_ok=True)
 
     subject_ids = get_all_subject_ids()
-    model_labels = list(range(1, 12))
+    model_labels = list(range(0, 15))
+
+    # model_labels = [0, 3, 4, 5] + list(range(12, 25))
+    model_labels = [0,3,4,5, 14, 15, 18, 25, 26, 27, 28, 29, 30, 31, 32,33]
     subjects = [Subject(subject_id=subject_id) for subject_id in subject_ids]
     pars = []
 
     keys = []
-    for sub, model_label in product(subjects, model_labels):
+    for sub, model_label, smoothed in product(subjects, model_labels, [True]):
         try:
-            pars.append(sub.get_prf_parameters_volume(smoothed=smoothed, model_label=model_label, roi='NPCr',
-                                                      gaussian=space == 'natural'))
-            keys.append((sub.subject_id, model_label))
+            pars.append(sub.get_prf_parameters_volume2(smoothed=smoothed, model_label=model_label, roi='NPCr', response_fit=fit_responses))
+            keys.append((sub.subject_id, model_label, smoothed))
         except Exception as e:
             print(f"Failed for {sub.subject_id} model {model_label}: {e}")
 
-
-    pars = pd.concat(pars, keys=keys, names=['subject_id', 'model_label'])
+    pars = pd.concat(pars, keys=keys, names=['subject_id', 'model_label', 'smoothed'], axis=0)
     pars.columns.names = ['parameter', 'range']
-    pars.to_csv(op.join(target_dir, f'group_roi-{roi}_parameters.tsv'), sep='\t')
-
-
-argparser = argparse.ArgumentParser()
-argparser.add_argument('roi', default='NPCr', type=str)
-argparser.add_argument('--bids_folder', default='/data/ds-neuralpriors')
-argparser.add_argument('--smoothed', action='store_true')
-argparser.add_argument('--log_space', action='store_const', const='log', default='natural', dest='space')
+    
+    if fit_responses:
+        pars.to_csv(op.join(target_dir, f'group_roi-{roi}_desc-responses_parameters.tsv'), sep='\t')
+    else:
+        pars.to_csv(op.join(target_dir, f'group_roi-{roi}_desc-groundtruth_parameters.tsv'), sep='\t')
 
 if __name__ == '__main__':
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('roi', default='NPCr', type=str)
+    argparser.add_argument('--bids_folder', default='/data/ds-neuralpriors')
+    argparser.add_argument('--fit_responses', action='store_true')
     args = argparser.parse_args()
-    main(roi=args.roi, bids_folder=args.bids_folder, smoothed=args.smoothed, space=args.space)
+    main(roi=args.roi, bids_folder=args.bids_folder, fit_responses=args.fit_responses)

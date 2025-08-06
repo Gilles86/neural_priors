@@ -1,284 +1,115 @@
-from neural_priors.utils.data import Subject
-from braincoder.models import RegressionGaussianPRF, GaussianPRF
-from braincoder.optimize import ParameterFitter
-import os.path as op
-import numpy as np
-import pandas as pd
-from braincoder.utils.math import norm
 from braincoder.models import AlphaGaussianPRF
 import tensorflow as tf
 import tensorflow_probability as tfp
+import numpy as np
 import logging
-
-'''
-1. 4-parameter model (everything same)
-2. 8-parameter model (everything different)
-3. Model A, 4-parameters (mu_wide = 10 + 2* (mu_narrow  - 10))
-4. Model B, 4-parameters (mu_wide = 10 + 2* (mu_narrow  - 10), sd_wide = sd_narrow * 2)
-5. Model C, 7-parameters (mu_wide = 10 + 2* (mu_narrow  - 10), everything else free)
-6. Model D, 5-parameters (mu free, everything else fixed)
-7. Model E, 7-parameters (mu is the same across two conditions)
-8. 6-parameters (mu and sd free, everything else fixed)
-9. 5-parameters (sd free, everything else fixed)
-10. 4-parameters, only SD follows range adaptation
-11. Like model 8, BUT starting points from 11 to 24 and 11 to 39
-'''
-
-range_increase_natural_space = (40 - 10) / (25 - 10) # (2)
-range_increase_log_space = (np.log(40) - np.log(10)) / (np.log(25) - np.log(10)) # (~1.5)
-
-def get_paradigm(sub, model_label, gaussian=True):
-    behavior = sub.get_behavioral_data(session=None)
-
-    range_increase = range_increase_log_space if not gaussian else range_increase_natural_space
-
-    if model_label in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]:
-        paradigm = behavior[['n', 'range']].rename(columns={'n':'x'})
-        paradigm['range'] = (paradigm['range'] == 'wide')
-
-        if not gaussian:
-            paradigm['x'] = np.log(paradigm['x'])
-    elif model_label in range(12, 18):
-        paradigm = behavior[['n', 'range']].rename(columns={'n':'x'})
-        paradigm['range'] = paradigm['range'].map({'narrow':False, 'wide':True})
-        paradigm = paradigm[['x', 'range']]
-    else:
-        raise NotImplementedError(f"Model {model_label} is not implemented")
-
-    if model_label in[3, 4, 10]:
-
-        paradigm['beta'] = paradigm['range'].map({False:1, True:range_increase})
-
-        paradigm.drop('range', axis=1, inplace=True)
-
-    elif model_label in [5]:
-        paradigm['beta'] = paradigm['range'].map({False:1, True:range_increase})
-
-    paradigm = paradigm.astype(np.float32)
-
-    return paradigm
+from braincoder.stimuli import Stimulus
+import tensorflow as tf
+import tensorflow_probability as tfp
 
 
-def get_regressors(model_label):
-    if model_label == 1:
-        regressors = {}
-    elif model_label == 2:
-        regressors = {'mu':'0 + C(range)', 'sd':'0 + C(range)', 'amplitude':'0 + C(range)', 'baseline':'0 + C(range)'}
-    elif model_label == 3:
-        regressors = {'mu':'0 + beta'}
-    elif model_label == 4:
-        regressors = {'mu':'0 + beta', 'sd':'0 + beta'}
-    elif model_label == 5:
-        regressors = {'mu':'0 + beta', 'sd':'0 + C(range)', 'amplitude':'0 + C(range)', 'baseline':'0 + C(range)'}
-    elif model_label == 6:
-        regressors = {'mu':'0 + C(range)'}
-    elif model_label == 7:
-        regressors = {'sd':'0 + C(range)', 'amplitude':'0 + C(range)', 'baseline':'0 + C(range)'}
-    elif model_label == 8:
-        regressors = {'mu':'0 + C(range)', 'sd':'0 + C(range)'}
-    elif model_label == 9:
-        regressors = {'sd':'0 + C(range)'}
-    elif model_label == 10:
-        regressors = {'sd':'0 + beta'}
-    elif model_label == 11:
-        regressors = {'mu':'0 + C(range)', 'sd':'0 + C(range)'}
-    elif model_label in range(12, 18):
-        return None
-    else:
-        raise NotImplementedError(f"Model {model_label} is not implemented")
+def create_transform_functions(transforms):
+    """
+    Creates forward and backward transformation functions based on the parameter labels.
 
-    return regressors
+    Args:
+        parameter_labels (list of str): List of parameter labels.
 
-def get_model(paradigm, model_label, gaussian=True):
-
-    regressors = get_regressors(model_label)
-
-    if model_label in [1, 2, 6, 7, 8, 9, 10, 11]:
-        model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors)
-    elif model_label in [3, 4, 5]:
-        if gaussian:
-            model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors, baseline_parameter_values={'mu':10})
+    Returns:
+        tuple: A tuple containing the forward and backward transformation functions.
+    """
+    def apply_transform(param, transform):
+        if transform == 'softplus':
+            return tf.math.softplus(param)
+        elif transform == 'softplus_inverse':
+            return tfp.math.softplus_inverse(param)
         else:
-            model = RegressionGaussianPRF(paradigm=paradigm, regressors=regressors, baseline_parameter_values={'mu':np.log(10)})
+            return param
 
-    elif model_label in [12, 13]:
-        model = GaussianDeltaModel(paradigm=paradigm)
+    def forward_transform_function(parameters):
+        transformed_parameters = []
+        for i, transform in enumerate(transforms):
+            if transform == 'softplus':
+                transformed_parameters.append(apply_transform(parameters[:, i], 'softplus'))
+            else:
+                transformed_parameters.append(parameters[:, i])
+        return tf.stack(transformed_parameters, axis=1)
 
-    return model
+    def backward_transform_function(parameters):
+        transformed_parameters = []
+        for i, transform in enumerate(transforms):
+            if transform == 'softplus':
+                transformed_parameters.append(apply_transform(parameters[:, i], 'softplus_inverse'))
+            else:
+                transformed_parameters.append(parameters[:, i])
+        return tf.stack(transformed_parameters, axis=1)
 
-def get_parameter_grids(model_label, gaussian=True):
-    """Returns modes, sigmas, amplitudes, and baselines based on model_label and gaussian flag."""
-    
-    amplitudes = np.array([1.], dtype=np.float32)
-    baselines = np.array([0], dtype=np.float32)
-
-    def make_grid(min_val, max_val, steps, log_space):
-        """Helper function to create either linear or log-spaced grids."""
-        if log_space:
-            return np.linspace(np.log(min_val), np.log(max_val), steps, dtype=np.float32)
-        return np.linspace(min_val, max_val, steps, dtype=np.float32)
-
-    # Special case for model_label 11 (two separate mode grids)
-    if model_label == 11:
-        modes1 = make_grid(11, 24, int(14/2.), not gaussian)
-        modes2 = make_grid(11, 39, int(29/2.), not gaussian)
-        # sigmas = make_grid(3, 30, int(15/2.), not gaussian)
-        sigmas = np.linspace(2.5, 15, 15) if gaussian else np.linspace(.1, 2., 10)
-
-    # Standard mode/sigma definitions for other models
-    model_params = {
-        (1, 7,): (5, 45, 41, 3, 30, 30),
-        (2, 8, 9): (5, 45, 13, 3, 30, 13),
-        (5,): (0, 15, 16, 3, 30, 15),  # Special case for log-space
-        (3, 4,):   (0, 15, 41, 3, 15, 30),  # Special case for log-space
-        (6,10):   (5, 45, 16, 3, 15, 15),
-        (12, 13):   (10, 25, 15, 3, 15, 15),
-    }
-
-    for labels, (mode_min, mode_max, mode_steps, sigma_min, sigma_max, sigma_steps) in model_params.items():
-        if model_label in labels:
-            modes = make_grid(mode_min, mode_max, mode_steps, not gaussian)
-            sigmas = make_grid(sigma_min, sigma_max, sigma_steps, not gaussian)
-            return modes, sigmas, amplitudes, baselines
-
-    raise ValueError(f"Unknown model_label: {model_label}")
-
-def fit_model(model, paradigm, data, model_label, max_n_iterations=1000, gaussian=True):
-
-    print(paradigm)
-    optimizer = ParameterFitter(model, data.astype(np.float32), paradigm.astype(np.float32))
-
-    # Get parameter grids
-    if model_label == 11:
-        modes1, modes2, sigmas, amplitudes, baselines = get_parameter_grids(model_label, gaussian)
-    else:
-        modes, sigmas, amplitudes, baselines = get_parameter_grids(model_label, gaussian)
-
-    # Define grid fitting based on model_label
-    model_grid_configs = {
-        6: lambda: optimizer.fit_grid(modes, modes, sigmas, amplitudes, baselines),
-        8: lambda: optimizer.fit_grid(modes, modes, sigmas, sigmas, amplitudes, baselines),
-        9: lambda: optimizer.fit_grid(modes, sigmas, sigmas, amplitudes, baselines),
-        11: lambda: optimizer.fit_grid(modes1, modes2, sigmas, sigmas, amplitudes, baselines),
-        2: lambda: optimizer.fit_grid(modes, modes, sigmas, sigmas, amplitudes, amplitudes, baselines, baselines),
-        5: lambda: optimizer.fit_grid(modes, sigmas, sigmas, amplitudes, amplitudes, baselines, baselines),
-        7: lambda: optimizer.fit_grid(modes, sigmas, sigmas, amplitudes, amplitudes, baselines, baselines),
-    }
-
-    print("FITTING GRID")
-    # Default grid fitting
-    grid_pars = model_grid_configs.get(model_label, lambda: optimizer.fit_grid(modes, sigmas, amplitudes, baselines))()
-
-    print(grid_pars.describe())
-
-    # Define fixed parameters
-    fixed_pars = list(model.parameter_labels)
-    fixed_mapping = {
-        (1, 3, 4, 6, 8, 9, 10, 11): [('amplitude_unbounded', 'Intercept'), ('baseline_unbounded', 'Intercept')],
-        (2, 5, 7): [
-            ('amplitude_unbounded', 'C(range)[0.0]'),
-            ('baseline_unbounded', 'C(range)[0.0]'),
-            ('amplitude_unbounded', 'C(range)[1.0]'),
-            ('baseline_unbounded', 'C(range)[1.0]'),
-        ]
-    }
-
-    for keys, to_remove in fixed_mapping.items():
-        if model_label in keys:
-            for item in to_remove:
-                fixed_pars.pop(fixed_pars.index(item))
-
-    # Fit one (only baseline/amplitude)
-    gd_pars = optimizer.fit(
-        init_pars=grid_pars, learning_rate=.05, store_intermediate_parameters=False,
-        max_n_iterations=max_n_iterations, fixed_pars=fixed_pars, r2_atol=0.001
-    )
-
-    # Fit two
-    gd_pars = optimizer.fit(
-        init_pars=optimizer.estimated_parameters, learning_rate=.01, store_intermediate_parameters=False,
-        max_n_iterations=max_n_iterations, r2_atol=0.00001
-    )
-
-    print(gd_pars.describe())
-
-    return gd_pars
-
-def get_conditionspecific_parameters(model_label, model, estimated_parameters, gaussian=True):
-
-    range_increase = range_increase_log_space if not gaussian else range_increase_natural_space
-
-    print("Getting parameters with range_increase", range_increase)
-
-
-    if model_label in range(12,18):
-
-        pars = pd.DataFrame()
-
-        pars[('mu', 'narrow')] = estimated_parameters['mu_narrow']
-        pars[('mu', 'wide')] = estimated_parameters['delta_wide'] * (estimated_parameters['mu_narrow'] - estimated_parameters['lower_bound_range']) + estimated_parameters['lower_bound_range']
-
-        for p in ['sd', 'amplitude', 'baseline', 'alpha', 'delta_wide', 'lower_bound_range']:
-            pars[(p, 'narrow')] = estimated_parameters[p]
-            pars[(p, 'wide')] = estimated_parameters[p]
-
-        pars.columns = pd.MultiIndex.from_tuples(pars.columns, names=['parameter', 'range'])
-        
-        return pars.stack('range').reorder_levels(['range', 'source'], axis=0).sort_index()
-
-
-    
-    if model_label in [1,2, 6, 7, 8, 9, 11]:
-        conditions = pd.DataFrame({'x':[0,0], 'range':[0,1]}, index=pd.Index(['narrow', 'wide'], name='range'))
-    elif model_label in [3, 4, 10]:
-        conditions = pd.DataFrame({'beta':[1,range_increase]}, index=pd.Index(['narrow', 'wide'], name='range'))
-    elif model_label in [5]:
-        conditions = pd.DataFrame({'beta':[1,range_increase], 'range':[0,1]}, index=pd.Index(['narrow', 'wide'], name='range'))
-    else:
-        raise NotImplementedError(f"Model {model_label} is not implemented")
-        
-    pars = model.get_conditionspecific_parameters(conditions, estimated_parameters)
-
-    return pars
-
-
+    return tf.function(forward_transform_function), tf.function(backward_transform_function)
 
 class AlphaDeltaModel(AlphaGaussianPRF):
-
-    parameter_labels = ['mu_narrow', 'sd', 'alpha', 'delta_wide', 'lower_bound_range', 'amplitude', 'baseline']
 
     def __init__(self, paradigm=None, data=None, parameters=None,
                  weights=None, omega=None, allow_neg_amplitudes=False, verbosity=logging.INFO,
                  model_stimulus_amplitude=False,
+                 identity_below_range=False,
+                 separate_amplitudes=False,
+                 separate_baselines=False,
+                 rescale_baseline=False,
+                 separate_sds=False,
                  **kwargs):
 
         if allow_neg_amplitudes:
             raise NotImplementedError("Negative amplitudes are not allowed for AlphaDeltaModel")
 
+        if rescale_baseline and separate_baselines:
+            raise ValueError("Rescaling baseline is not allowed with separate baselines")
+
+        if rescale_baseline and not separate_amplitudes:
+            raise NotImplementedError("Rescaling baseline is not allowed without separate amplitudes")
+
+        if separate_sds and (separate_amplitudes or separate_baselines):
+            raise NotImplementedError("Separate SDs cannot be combined with separate amplitudes or baselines")
+
+        self.identity_below_range = identity_below_range
+        self.separate_amplitudes = separate_amplitudes
+        self.separate_baselines = separate_baselines
+        self.rescale_baseline = rescale_baseline
+        self.separate_sds = separate_sds
+
+        self.parameter_labels = ['mu_narrow', 'alpha', 'delta_wide', 'lower_bound_range']
+
+        if self.separate_sds:
+            self.parameter_labels += ['sd_narrow', 'sd_wide']
+        else:
+            self.parameter_labels += ['sd']
+
+        if self.separate_amplitudes:
+            self.parameter_labels += ['amplitude_narrow', 'amplitude_wide']
+        else:
+            self.parameter_labels += ['amplitude']
+
+        if self.separate_baselines:
+            self.parameter_labels += ['baseline_narrow', 'baseline_wide']
+        else:
+            self.parameter_labels += ['baseline']
+
+        if self.rescale_baseline:
+            self.parameter_labels += ['baseline_ratio']
+
+        transforms = []
+
+        for par in self.parameter_labels:
+            if par.startswith('mu') or par.startswith('sd') or par.startswith('amplitude'):
+                transforms.append('softplus')
+            else:
+                transforms.append('identity')
+
+        self._transform_parameters_forward2, self._transform_parameters_backward2 = create_transform_functions(transforms)
+
         super().__init__(paradigm=paradigm, data=data, parameters=parameters,
                          weights=weights, omega=omega, allow_neg_amplitudes=allow_neg_amplitudes,
-                          verbosity=verbosity, model_stimulus_amplitude=model_stimulus_amplitude,
-                          **kwargs)
-    @tf.function
-    def _transform_parameters_forward2(self, parameters):
-        return tf.concat([tf.math.softplus(parameters[:, 0][:, tf.newaxis]),
-                          tf.math.softplus(parameters[:, 1][:, tf.newaxis]),
-                          parameters[:, 2][:, tf.newaxis],
-                          parameters[:, 3][:, tf.newaxis],
-                          parameters[:, 4][:, tf.newaxis],
-                          tf.math.softplus(parameters[:, 5][:, tf.newaxis]), # Amplitude
-                          parameters[:, 6][:, tf.newaxis]], axis=1)
-    
-    @tf.function
-    def _transform_parameters_backward2(self, parameters):
-        return tf.concat([tfp.math.softplus_inverse(parameters[:, 0][:, tf.newaxis]),
-                          tfp.math.softplus_inverse(
-                              parameters[:, 1][:, tf.newaxis]),
-                          parameters[:, 2][:, tf.newaxis],
-                          parameters[:, 3][:, tf.newaxis],
-                          parameters[:, 4][:, tf.newaxis],
-                          tfp.math.softplus_inverse(parameters[:, 5][:, tf.newaxis]),
-                          parameters[:, 6][:, tf.newaxis]], axis=1)
+                         verbosity=verbosity, model_stimulus_amplitude=model_stimulus_amplitude,
+                         **kwargs)
 
     @tf.function
     def _basis_predictions_without_amplitude(self, paradigm, parameters):
@@ -300,73 +131,223 @@ class AlphaDeltaModel(AlphaGaussianPRF):
 
         # Extract stimulus feature values
         x = paradigm[..., tf.newaxis, 0]
-        wide_condition = tf.cast(paradigm[..., 1], tf.bool)  # Ensure this is a tensor
+        wide_condition = tf.cast(paradigm[..., tf.newaxis, 1], tf.bool)  # Ensure this is a tensor
 
-        delta_wide = parameters[..., 3]
-        lower_bound_range = parameters[..., 4]
+        delta_wide = parameters[:, tf.newaxis, :, 2]
+        lower_bound_range = parameters[:, tf.newaxis, :, 3]
 
-        mu_narrow = parameters[..., 0]
+        mu_narrow = parameters[:, tf.newaxis, :, 0]
         mu_wide = tf.clip_by_value(((mu_narrow - lower_bound_range) * delta_wide) + lower_bound_range, 1e-6, float('inf'))
 
-        mu = tf.where(tf.transpose(wide_condition), mu_wide, mu_narrow)[tf.newaxis, ...]
+        mu = tf.where(wide_condition, mu_wide, mu_narrow)
 
-        return f_x(x,
-                   mu,
-                    parameters[:, tf.newaxis, :, 1],
-                    parameters[:, tf.newaxis, :, 2]) * \
-            parameters[:, tf.newaxis, :, 5] + parameters[:, tf.newaxis, :, 6]
+        if self.identity_below_range:
+            mu = tf.where(mu < lower_bound_range, mu_narrow, mu)
 
-class GaussianDeltaModel(GaussianPRF):
+        if self.separate_amplitudes:
+            narrow_index = self.parameter_labels.index('amplitude_narrow')
+            wide_index = self.parameter_labels.index('amplitude_wide')
+            amplitude = tf.where(wide_condition, parameters[:, tf.newaxis, :, wide_index], parameters[:, tf.newaxis, :, narrow_index])
+        else:
+            amplitude_index = self.parameter_labels.index('amplitude')
+            amplitude = parameters[:, tf.newaxis, :, amplitude_index]
 
-    parameter_labels = ['mu_narrow', 'sd', 'delta_wide', 'lower_bound_range', 'amplitude', 'baseline']
+        if self.separate_baselines:
+            narrow_index = self.parameter_labels.index('baseline_narrow')
+            wide_index = self.parameter_labels.index('baseline_wide')
+            baseline = tf.where(wide_condition, parameters[:, tf.newaxis, :, wide_index], parameters[:, tf.newaxis, :, narrow_index])
+        else:
+            baseline_index = self.parameter_labels.index('baseline')
 
-    def __init__(self, paradigm=None, data=None, parameters=None,
+            if self.rescale_baseline:
+                baseline_ratio_index = self.parameter_labels.index('baseline_ratio')
+                baseline = parameters[:, tf.newaxis, :, baseline_index]
+                baseline_ratio = parameters[:, tf.newaxis, :, baseline_ratio_index]
+                baseline = baseline - amplitude * baseline_ratio
+            else:
+                baseline = parameters[:, tf.newaxis, :, baseline_index]
+
+        if self.separate_sds:
+            narrow_index = self.parameter_labels.index('sd_narrow')
+            wide_index = self.parameter_labels.index('sd_wide')
+            sd = tf.where(wide_condition, parameters[:, tf.newaxis, :, wide_index], parameters[:, tf.newaxis, :, narrow_index])
+        else:
+            sd_index = self.parameter_labels.index('sd')
+            sd = parameters[:, tf.newaxis, :, sd_index]
+
+        alpha = parameters[:, tf.newaxis, :, 1]
+
+        return f_x(x, mu, sd, alpha) * amplitude + baseline
+
+    def _get_stimulus(self, **kwargs):
+        return Stimulus(n_dimensions=2)
+
+class LinearScalingModel(AlphaGaussianPRF):
+
+    def __init__(self,  paradigm=None, data=None, parameters=None,
                  weights=None, omega=None, allow_neg_amplitudes=False, verbosity=logging.INFO,
                  model_stimulus_amplitude=False,
+                 identity_below_range=True,
+                 separate_mus=True,
+                 separate_sds=False,
+                 separate_amplitudes=False,
+                 rescale_baseline=False,
+                 sd_natural=False,
+                 sigma_fwhm=False,
                  **kwargs):
 
+
+        if sigma_fwhm & sd_natural:
+            raise ValueError("Cannot use both sigma_fwhm and sd_natural at the same time. Use one of them.")
+
         if allow_neg_amplitudes:
-            raise NotImplementedError("Negative amplitudes are not allowed for AlphaDeltaModel")
+            raise NotImplementedError("Negative amplitudes are not allowed for LinearScalingModel")
+
+        if rescale_baseline and not separate_amplitudes:
+            raise NotImplementedError("Rescaling baseline is not allowed without separate amplitudes")
+
+        if not identity_below_range:
+            raise ValueError("We don't do identity_below_range for LinearScalingModel")
+
+        if not separate_mus:
+            raise ValueError("Mus always shift for LinearScalingModel")
+
+        self.identity_below_range = identity_below_range
+
+        self.separate_mus = separate_mus
+        self.separate_amplitudes = separate_amplitudes
+        self.rescale_baseline = rescale_baseline
+        self.separate_sds = separate_sds
+
+        self.natural_sd = sd_natural
+        self.sigma_fwhm = sigma_fwhm
+
+        self.parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline']
+
+        if self.separate_sds:
+            self.parameter_labels += ['sd_narrow', 'sd_wide_scale']
+        else:
+            self.parameter_labels += ['sd']
+
+        if self.separate_amplitudes:
+            self.parameter_labels += ['amplitude_narrow', 'amplitude_alpha', 'amplitude_beta']
+        else:
+            self.parameter_labels += ['amplitude']
+
+        if self.rescale_baseline:
+            self.parameter_labels += ['baseline_ratio']
+
+        transforms = []
+
+        for par in self.parameter_labels:
+            if par in ['mu_narrow', 'lower_bound_range', 'sd_narrow', 'sd', 'amplitude_narrow', 'amplitude']:
+                transforms.append('softplus')
+            else:
+                transforms.append('identity')
+
+        self._transform_parameters_forward2, self._transform_parameters_backward2 = create_transform_functions(transforms)
 
         super().__init__(paradigm=paradigm, data=data, parameters=parameters,
                          weights=weights, omega=omega, allow_neg_amplitudes=allow_neg_amplitudes,
-                          verbosity=verbosity, model_stimulus_amplitude=model_stimulus_amplitude,
-                          **kwargs)
-    @tf.function
-    def _transform_parameters_forward2(self, parameters):
-        return tf.concat([tf.math.softplus(parameters[:, 0][:, tf.newaxis]),
-                          tf.math.softplus(parameters[:, 1][:, tf.newaxis]),
-                          parameters[:, 2][:, tf.newaxis],
-                          parameters[:, 3][:, tf.newaxis],
-                          tf.math.softplus(parameters[:, 4][:, tf.newaxis]), # Amplitude
-                          parameters[:, 5][:, tf.newaxis]], axis=1)
-    
-    @tf.function
-    def _transform_parameters_backward2(self, parameters):
-        return tf.concat([tfp.math.softplus_inverse(parameters[:, 0][:, tf.newaxis]),
-                          tfp.math.softplus_inverse(
-                              parameters[:, 1][:, tf.newaxis]),
-                          parameters[:, 2][:, tf.newaxis],
-                          parameters[:, 3][:, tf.newaxis],
-                          tfp.math.softplus_inverse(parameters[:, 4][:, tf.newaxis]),
-                          parameters[:, 5][:, tf.newaxis]], axis=1)
+                         verbosity=verbosity, model_stimulus_amplitude=model_stimulus_amplitude,
+                         **kwargs)
+
 
     @tf.function
     def _basis_predictions_without_amplitude(self, paradigm, parameters):
 
+        
+        if self.natural_sd:
+            def f_x(x, mu_x, sigma_mu_nat):
+                """
+                Computes p_x(x | mu_x, sigma_mu_nat), where sigma_mu_nat is the stddev in natural space.
+                """
+                # Convert natural-space stddev to log-space stddev
+                sigma_mu_log = tf.sqrt(tf.math.log(1.0 + tf.square(sigma_mu_nat / mu_x)))
+
+                mu_alpha_x = tf.math.log(x)
+                mu_alpha_mu = tf.math.log(mu_x)
+                exponent = -tf.square(mu_alpha_x - mu_alpha_mu) / (2 * tf.square(sigma_mu_log))
+                return tf.exp(exponent)
+
+        elif self.sigma_fwhm:
+            def f_x(x, mu_x, fwhm):
+                """
+                Computes p_x(x | mu_x, fwhm), where fwhm is the full width at half maximum
+                of the lognormal distribution with mean mu_x in natural space.
+                """
+                two = tf.constant(2.0, dtype=tf.float32)
+                log2 = tf.math.log(two)
+                
+                # Compute log-space sigma from FWHM
+                sigma_mu_log = tf.asinh(fwhm / (two * mu_x)) / tf.sqrt(two * log2)
+
+                mu_alpha_x = tf.math.log(x)
+                mu_alpha_mu = tf.math.log(mu_x)
+                exponent = -tf.square(mu_alpha_x - mu_alpha_mu) / (two * tf.square(sigma_mu_log))
+                return tf.exp(exponent)
+
+        else:
+            def f_x(x, mu_x, sigma_mu):
+                """ Computes p_x(x | mu_x, sigma_x) using the given formula. """
+                mu_alpha_x = tf.math.log(x)  # Using your transformation
+                mu_alpha_mu = tf.math.log(mu_x)  # Using your transformation
+                exponent = -tf.square(mu_alpha_x - mu_alpha_mu) / (2 * tf.square(sigma_mu))
+                return tf.exp(exponent)
+
         # Extract stimulus feature values
         x = paradigm[..., tf.newaxis, 0]
-        wide_condition = tf.cast(paradigm[..., 1], tf.bool)  # Ensure this is a tensor
+        wide_condition = tf.cast(paradigm[..., tf.newaxis, 1], tf.bool)  # Ensure this is a tensor
 
-        delta_wide = parameters[..., 2]
-        lower_bound_range = parameters[..., 3]
+        delta_wide = parameters[:, tf.newaxis, :, 1]
+        lower_bound_range = parameters[:, tf.newaxis, :, 2]
 
-        mu_narrow = parameters[..., 0]
+        mu_narrow = parameters[:, tf.newaxis, :, 0]
         mu_wide = tf.clip_by_value(((mu_narrow - lower_bound_range) * delta_wide) + lower_bound_range, 1e-6, float('inf'))
 
-        mu = tf.where(tf.transpose(wide_condition), mu_wide, mu_narrow)[tf.newaxis, ...]
+        mu = tf.where(wide_condition, mu_wide, mu_narrow)
 
-        return norm(x,
-                    mu,
-                    parameters[:, tf.newaxis, :, 1]) * \
-            parameters[:, tf.newaxis, :, 4] + parameters[:, tf.newaxis, :, 5]
+        if self.identity_below_range:
+            mu = tf.where(mu < lower_bound_range, mu_narrow, mu)
+
+        if self.separate_sds:
+            narrow_index = self.parameter_labels.index('sd_narrow')
+            wide_index = self.parameter_labels.index('sd_wide_scale')
+
+            sd_narrow = parameters[:, tf.newaxis, :, narrow_index]
+            sd_wide = parameters[:, tf.newaxis, :, narrow_index] * parameters[:, tf.newaxis, :, wide_index]
+            sd = tf.where(wide_condition, sd_wide, sd_narrow)
+        else:
+            sd_index = self.parameter_labels.index('sd')
+            sd = parameters[:, tf.newaxis, :, sd_index]
+
+        if self.separate_amplitudes:
+            narrow_index = self.parameter_labels.index('amplitude_narrow')
+            alpha_index = self.parameter_labels.index('amplitude_alpha')
+            beta_index = self.parameter_labels.index('amplitude_beta')
+
+            amplitude_narrow = parameters[:, tf.newaxis, :, narrow_index]
+            amplitude_alpha = parameters[:, tf.newaxis, :, alpha_index]
+            amplitude_beta = parameters[:, tf.newaxis, :, beta_index]
+
+            amplitude_wide = amplitude_alpha + amplitude_beta * amplitude_narrow
+
+            amplitude = tf.where(wide_condition, amplitude_wide, amplitude_narrow)
+        else:
+            amplitude_index = self.parameter_labels.index('amplitude')
+            amplitude = parameters[:, tf.newaxis, :, amplitude_index]
+
+        baseline_index = self.parameter_labels.index('baseline')
+
+        if self.rescale_baseline:
+            baseline_ratio_index = self.parameter_labels.index('baseline_ratio')
+            baseline = parameters[:, tf.newaxis, :, baseline_index]
+            baseline_ratio = parameters[:, tf.newaxis, :, baseline_ratio_index]
+            baseline = baseline - amplitude * baseline_ratio
+        else:
+            baseline = parameters[:, tf.newaxis, :, baseline_index]
+
+        return f_x(x, mu, sd) * amplitude + baseline
+
+    def _get_stimulus(self, **kwargs):
+        return Stimulus(n_dimensions=2)
