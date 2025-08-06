@@ -28,7 +28,7 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
     if fit_responses:
         key += '.fit_responses'
 
-    target_dir = op.join(bids_folder, 'derivatives', 'encoding_models2', key, f'sub-{subject}', 'func')
+    target_dir = op.join(bids_folder, 'derivatives', 'encoding_models', key, f'sub-{subject}', 'func')
 
     if not op.exists(target_dir):
         os.makedirs(target_dir)

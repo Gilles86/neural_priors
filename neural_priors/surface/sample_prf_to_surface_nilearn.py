@@ -34,7 +34,7 @@ def main(subject, model_label, bids_folder, smoothed, keys_to_extract=None):
     if smoothed:
         key += '.smoothed'
 
-    target_dir = op.join(bids_folder, 'derivatives', 'encoding_models2', key, f'sub-{subject}', 'func')
+    target_dir = op.join(bids_folder, 'derivatives', 'encoding_models', key, f'sub-{subject}', 'func')
 
     print(f'Writing to {target_dir}')
 

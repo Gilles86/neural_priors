@@ -335,21 +335,8 @@ class Subject(object):
         _log("Returning final mask as Nifti1Image.")
         return mask
 
-    def get_prf_parameters_volume(self, session=None, 
-            run=None,
-            smoothed=True,
-            cross_validated=False,
-            keys=None,
-            roi=None,
-            return_image=False,
-            sensory_space='gaussian',
-            include_cvr2=True,
-            gaussian=None,
-            model_label=1):
 
-        raise NotImplementedError('Use get_prf_parameters_volume2 instead')
-
-    def get_prf_parameters_volume2(self, model_label, smoothed=True, roi=None, response_fit=False, return_image=False,
+    def get_prf_parameters_volume(self, model_label, smoothed=True, roi=None, response_fit=False, return_image=False,
                                    raw=False, par_keys=None):
 
         if par_keys is None:
@@ -374,7 +361,7 @@ class Subject(object):
 
         masker = self.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
 
-        target_dir = op.join(self.bids_folder, 'derivatives', 'encoding_models2', key, f'sub-{self.subject_id}', 'func')
+        target_dir = op.join(self.bids_folder, 'derivatives', 'encoding_models', key, f'sub-{self.subject_id}', 'func')
 
         pars = []
 
@@ -385,7 +372,7 @@ class Subject(object):
 
         pars.append(pd.Series(masker.transform(op.join(target_dir, f'sub-{self.subject_id}_desc-r2.optim_space-T1w_pars.nii.gz')).squeeze(), name=('r2', None)))
 
-        cv_dir = op.join(self.bids_folder, 'derivatives', 'encoding_models2',  cv_key, f'sub-{self.subject_id}', 'func')
+        cv_dir = op.join(self.bids_folder, 'derivatives', 'encoding_models',  cv_key, f'sub-{self.subject_id}', 'func')
 
         pars.append(pd.Series(masker.transform(op.join(cv_dir, f'sub-{self.subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')).squeeze(), name=('cvr2', None)))
 
@@ -438,16 +425,13 @@ class Subject(object):
 
         return info
 
-    def get_prf_parameters_surf(self, model_label, smoothed=False, hemi=None, space='fsnative', gaussian=True):
-          raise NotImplementedError('Use get_prf_parameters_surf2 instead')
-
-    def get_prf_parameters_surf2(self, model_label, smoothed=False, hemi=None, space='fsnative', fit_responses=False):
+    def get_prf_parameters_surf(self, model_label, smoothed=False, hemi=None, space='fsnative', fit_responses=False):
 
         parameter_keys = ['r2', 'cvr2', 'mu.narrow', 'mu.wide']
 
         if hemi is None:
-            prf_l = self.get_prf_parameters_surf2(model_label, smoothed, hemi='L', space=space)
-            prf_r = self.get_prf_parameters_surf2(model_label, smoothed, hemi='R', space=space)
+            prf_l = self.get_prf_parameters_surf(model_label, smoothed, hemi='L', space=space)
+            prf_r = self.get_prf_parameters_surf(model_label, smoothed, hemi='R', space=space)
             
             return pd.concat((prf_l, prf_r), axis=0, 
                     keys=pd.Index(['L', 'R'], name='hemi'))
@@ -461,7 +445,7 @@ class Subject(object):
         if fit_responses:
             key += '.fit_responses'
 
-        dir = op.join(self.bids_folder, 'derivatives', 'encoding_models2', key, f'sub-{self.subject_id}', 'func')
+        dir = op.join(self.bids_folder, 'derivatives', 'encoding_models', key, f'sub-{self.subject_id}', 'func')
 
         parameters = []
 

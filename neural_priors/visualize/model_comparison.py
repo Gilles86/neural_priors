@@ -35,7 +35,7 @@ def main(model_labels, bids_folder='/data/ds-neuralpriors', vmin=10, vmax=25, cv
             pars[parameter] = []
 
             for hemi in ['L', 'R']:
-                fn = bids_folder / f'derivatives/encoding_models2/model{model_label}.whole_brain.smoothed/group_{parameter}_hemi-{hemi}.pars.gii'
+                fn = bids_folder / f'derivatives/encoding_models/model{model_label}.whole_brain.smoothed/group_{parameter}_hemi-{hemi}.pars.gii'
                 pars[parameter].append(surface.load_surf_data(fn))
 
             pars[parameter] = np.concatenate(pars[parameter], axis=0)

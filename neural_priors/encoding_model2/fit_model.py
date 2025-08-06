@@ -147,9 +147,9 @@ def get_grid(model_label):
             return modes, delta_wides, intersection_point, baselines, sds, amplitudes, amplitudes_alpha, amplitudes_beta
         elif model_label in [22, 24]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta']
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes, amplitudes_alpha, amplitudes_beta
-        elif model_label in [25, 26, 27, 28, 29, 30, 31]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta']
+        elif model_label in [25, 26, 27, 28, 29, 30, 31]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude']
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes
-        elif model_label in [32, 33]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
+        elif model_label in [32, 33]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta']
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes, amplitudes_alpha, amplitudes_beta
 
 def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_brain=False):
