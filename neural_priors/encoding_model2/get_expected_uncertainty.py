@@ -8,7 +8,7 @@ from braincoder.utils import get_rsq
 from braincoder.utils.math import get_expected_value, get_sd_posterior
 from braincoder.optimize import ResidualFitter
 
-def main(subject, model_label, smoothed, fit_responses, bids_folder, spherical_noise=False, roi='NPCr'):
+def main(subject, model_label, smoothed, fit_responses, bids_folder, spherical_noise=False, wide=False, roi='NPCr'):
 
     sub = Subject(subject, bids_folder=bids_folder)
 
@@ -31,6 +31,9 @@ def main(subject, model_label, smoothed, fit_responses, bids_folder, spherical_n
     if fit_responses:
         key += '.fit_responses'
 
+    if wide:
+        key += '.wide'
+
     target_dir = Path(bids_folder) / 'derivatives' / 'expected_uncertainty' / key / f'sub-{subject:02d}' / 'func'
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -44,12 +47,15 @@ def main(subject, model_label, smoothed, fit_responses, bids_folder, spherical_n
     data = data.loc[:, mask]
 
 
-    narrow_stimuli = pd.DataFrame(np.concatenate((np.arange(10, 26, 1)[:, np.newaxis], np.zeros(16)[:, np.newaxis]), axis=1), columns=['n', 'range'])
-    wide_stimuli = pd.DataFrame(np.concatenate((np.arange(10, 26, 1)[:, np.newaxis], np.ones(16)[:, np.newaxis]), axis=1), columns=['n', 'range'])
+    if wide:
+        narrow_stimuli = pd.DataFrame(np.concatenate((np.arange(10, 41, 1)[:, np.newaxis], np.zeros(31)[:, np.newaxis]), axis=1), columns=['n', 'range'])
+        wide_stimuli = pd.DataFrame(np.concatenate((np.arange(10, 41, 1)[:, np.newaxis], np.ones(31)[:, np.newaxis]), axis=1), columns=['n', 'range'])
+    else:
+        narrow_stimuli = pd.DataFrame(np.concatenate((np.arange(10, 26, 1)[:, np.newaxis], np.zeros(16)[:, np.newaxis]), axis=1), columns=['n', 'range'])
+        wide_stimuli = pd.DataFrame(np.concatenate((np.arange(10, 26, 1)[:, np.newaxis], np.ones(16)[:, np.newaxis]), axis=1), columns=['n', 'range'])
+
     narrow_stimuli.index.name = 'stimulus'
     wide_stimuli.index.name = 'stimulus'
-
-    stimuli = pd.concat((narrow_stimuli, wide_stimuli), axis=0, keys=['narrow', 'wide'], names=['range'])
 
     model = get_model(model_label)
     model.init_pseudoWWT(narrow_stimuli, pars)
@@ -92,7 +98,8 @@ if __name__ == "__main__":
     parser.add_argument("--smoothed", action='store_true', help="Whether the data is smoothed")
     parser.add_argument("--fit_responses", action='store_true', help="Whether to fit responses")
     parser.add_argument("--spherical_noise", action='store_true', help="Spherical noise?")
+    parser.add_argument("--wide", action='store_true', help="Use wide prior for both wide and narrow stimuli")
     parser.add_argument("--bids_folder", default='/data/ds-neuralpriors', type=Path, help="BIDS folder path")
 
     args = parser.parse_args()
-    main(args.subject, args.model_label, args.smoothed, args.fit_responses, args.bids_folder, spherical_noise=args.spherical_noise)
+    main(args.subject, args.model_label, args.smoothed, args.fit_responses, args.bids_folder, spherical_noise=args.spherical_noise, wide=args.wide)

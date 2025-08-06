@@ -52,7 +52,7 @@ def main(subject, model_label, smoothed, fit_responses, bids_folder, spherical_n
 
     # print(r2.sort_values())
 
-    narrow_stimuli = np.concatenate((np.arange(10, 26, 1)[:, np.newaxis], np.zeros(16)[:, np.newaxis]), axis=1)
+    narrow_stimuli = np.concatenate((np.arange(10, 41, 1)[:, np.newaxis], np.zeros(31)[:, np.newaxis]), axis=1)
     wide_stimuli = np.concatenate((np.arange(10, 41, 1)[:, np.newaxis], np.ones(31)[:, np.newaxis]), axis=1)
     stimuli = np.concatenate((narrow_stimuli, wide_stimuli), axis=0).astype(np.float32)
 
