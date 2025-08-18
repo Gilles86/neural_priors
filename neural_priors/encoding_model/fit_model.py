@@ -8,7 +8,7 @@ import pandas as pd
 from nilearn.maskers import NiftiMasker
 from nilearn import image
 from braincoder.optimize import ParameterFitter
-from neural_priors.encoding_model2.models import AlphaDeltaModel, LinearScalingModel
+from neural_priors.encoding_model.models import AlphaDeltaModel, LinearScalingModel
 
 # Model 0: null model
 # Model 1: delta_wide is 2
