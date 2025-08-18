@@ -108,6 +108,9 @@ generated quantities {
     array[S] real<lower=0> avg_var_s_30_1124;
     array[S] real<lower=0> avg_var_s_30_1223;
     array[S] real<lower=0> avg_var_s_30_1322;
+    array[S] real<lower=0> avg_var_s_30_1139;
+    array[S] real<lower=0> avg_var_s_30_1238;
+    array[S] real<lower=0> avg_var_s_30_1337;
     for (s in 1:S) {
         // delta_var_s[s] = var_s_30[s, 1:16] - var_s_15[s]; // doesn't work, have to loop
         for (j in 1:16) {
@@ -122,6 +125,9 @@ generated quantities {
         avg_var_s_30_1124[s] = mean(var_s_30[s, 2:15]); // 11 to 24
         avg_var_s_30_1223[s] = mean(var_s_30[s, 3:14]); // 12 to 23
         avg_var_s_30_1322[s] = mean(var_s_30[s, 4:13]); // 13 to 22
+        avg_var_s_30_1139[s] = mean(var_s_30[s, 2:30]); // 11 to 39
+        avg_var_s_30_1238[s] = mean(var_s_30[s, 3:29]); // 12 to 38
+        avg_var_s_30_1337[s] = mean(var_s_30[s, 4:28]); // 13 to 37
     }
     array[S] real          delta_avg_var_s; // = avg_var_s_30 - avg_var_s_15;
     array[S] real          delta_avg_var_s_narrowrange; // = avg_var_s_30_narrowrange - avg_var_s_15;
@@ -149,6 +155,9 @@ generated quantities {
     array[S] real<lower=0> avg_sigma_s_30_1124;
     array[S] real<lower=0> avg_sigma_s_30_1223;
     array[S] real<lower=0> avg_sigma_s_30_1322;
+    array[S] real<lower=0> avg_sigma_s_30_1139;
+    array[S] real<lower=0> avg_sigma_s_30_1238;
+    array[S] real<lower=0> avg_sigma_s_30_1337;
     for (s in 1:S) {
         for (j in 1:16) {
             delta_sigma_s[s, j] = sigma_s_30[s, j] - sigma_s_15[s, j];
@@ -162,6 +171,9 @@ generated quantities {
         avg_sigma_s_30_1124[s] = mean(sigma_s_30[s, 2:15]); // 11 to 24
         avg_sigma_s_30_1223[s] = mean(sigma_s_30[s, 3:14]); // 12 to 23
         avg_sigma_s_30_1322[s] = mean(sigma_s_30[s, 4:13]); // 13 to 22
+        avg_sigma_s_30_1139[s] = mean(sigma_s_30[s, 2:30]); // 11 to 39
+        avg_sigma_s_30_1238[s] = mean(sigma_s_30[s, 3:29]); // 12 to 38
+        avg_sigma_s_30_1337[s] = mean(sigma_s_30[s, 4:28]); // 13 to 37
     }
     array[S] real          delta_avg_sigma_s; // = avg_sigma_s_30 - avg_sigma_s_15;
     array[S] real          delta_avg_sigma_s_narrowrange; // = avg_sigma_s_30_narrowrange - avg_sigma_s_15;
@@ -209,6 +221,9 @@ generated quantities {
     array[S] real<lower=0> avg_inv_sigma_s_30_1124;
     array[S] real<lower=0> avg_inv_sigma_s_30_1223;
     array[S] real<lower=0> avg_inv_sigma_s_30_1322;
+    array[S] real<lower=0> avg_inv_sigma_s_30_1139;
+    array[S] real<lower=0> avg_inv_sigma_s_30_1238;
+    array[S] real<lower=0> avg_inv_sigma_s_30_1337;
     for (s in 1:S) {
         avg_inv_sigma_s_15[s] = mean(inv_sigma_s_15[s]);
         avg_inv_sigma_s_15_1124[s] = mean(inv_sigma_s_15[s, 2:15]); // 11 to 24
@@ -219,6 +234,9 @@ generated quantities {
         avg_inv_sigma_s_30_1124[s] = mean(inv_sigma_s_30[s, 2:15]); // 11 to 24
         avg_inv_sigma_s_30_1223[s] = mean(inv_sigma_s_30[s, 3:14]); // 12 to 23
         avg_inv_sigma_s_30_1322[s] = mean(inv_sigma_s_30[s, 4:13]); // 13 to 22
+        avg_inv_sigma_s_30_1139[s] = mean(inv_sigma_s_30[s, 2:30]); // 11 to 39
+        avg_inv_sigma_s_30_1238[s] = mean(inv_sigma_s_30[s, 3:29]); // 12 to 38
+        avg_inv_sigma_s_30_1337[s] = mean(inv_sigma_s_30[s, 4:28]); // 13 to 37
     }
     array[S] real          delta_avg_inv_sigma_s; // = avg_inv_sigma_s_30 - avg_inv_sigma_s_15;
     array[S] real          delta_avg_inv_sigma_s_narrowrange; // = avg_inv_sigma_s_30_narrowrange - avg_inv_sigma_s_15;
@@ -251,6 +269,9 @@ generated quantities {
     array[S] real avg_log_var_s_30_1124;
     array[S] real avg_log_var_s_30_1223;
     array[S] real avg_log_var_s_30_1322;
+    array[S] real avg_log_var_s_30_1139;
+    array[S] real avg_log_var_s_30_1238;
+    array[S] real avg_log_var_s_30_1337;
     for (s in 1:S) {
         for (j in 1:16) {
             delta_log_var_s[s, j] = log_var_s_30[s, j] - log_var_s_15[s, j];
@@ -264,6 +285,9 @@ generated quantities {
         avg_log_var_s_30_1124[s] = mean(log_var_s_30[s, 2:15]); // 11 to 24
         avg_log_var_s_30_1223[s] = mean(log_var_s_30[s, 3:14]); // 12 to 23
         avg_log_var_s_30_1322[s] = mean(log_var_s_30[s, 4:13]); // 13 to 22
+        avg_log_var_s_30_1139[s] = mean(log_var_s_30[s, 2:30]); // 11 to 39
+        avg_log_var_s_30_1238[s] = mean(log_var_s_30[s, 3:29]); // 12 to 38
+        avg_log_var_s_30_1337[s] = mean(log_var_s_30[s, 4:28]); // 13 to 37
     }
     array[S] real delta_avg_log_var_s; // = avg_log_var_s_30 - avg_log_var_s_15;
     array[S] real delta_avg_log_var_s_narrowrange; // = avg_log_var_s_30_narrowrange - avg_log_var_s_15;
