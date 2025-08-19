@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 from neural_priors.utils.data import Subject
-from neural_priors.encoding_model2.fit_model import get_model, get_paradigm
+from neural_priors.encoding_model.fit_model import get_model, get_paradigm
 import pandas as pd
 import numpy as np
 from braincoder.utils import get_rsq
@@ -12,8 +12,8 @@ def main(subject, model_label, smoothed, fit_responses, bids_folder, spherical_n
 
     sub = Subject(subject, bids_folder=bids_folder)
 
-    pars = sub.get_prf_parameters_volume2(model_label, smoothed=smoothed, roi='NPCr', raw=True)
-    cvr2 = sub.get_prf_parameters_volume2(model_label, smoothed=smoothed, roi='NPCr', raw=False, par_keys=[])['cvr2'].squeeze()
+    pars = sub.get_prf_parameters_volume(model_label, smoothed=smoothed, roi='NPCr', raw=True)
+    cvr2 = sub.get_prf_parameters_volume(model_label, smoothed=smoothed, roi='NPCr', raw=False, par_keys=[])['cvr2'].squeeze()
     print(cvr2)
     mask = cvr2 > 0.0
     print(mask)
@@ -66,8 +66,8 @@ def main(subject, model_label, smoothed, fit_responses, bids_folder, spherical_n
     omega, dof = resid_fitter.fit(max_n_iterations=5000, spherical=spherical_noise, method='t', init_dof=10.0,)
 
 
-    simulated_data_narrow = model.simulate(narrow_stimuli, pars, noise=omega, dof=dof, n_repeats=1000)
-    simulated_data_wide = model.simulate(wide_stimuli, pars, noise=omega, dof=dof, n_repeats=1000)
+    simulated_data_narrow = model.simulate(narrow_stimuli, pars, noise=omega, dof=dof, n_repeats=20000)
+    simulated_data_wide = model.simulate(wide_stimuli, pars, noise=omega, dof=dof, n_repeats=20000)
 
 
     p_stim_narrow =  model.get_stimulus_pdf(simulated_data_narrow, parameters=pars, omega=omega, dof=dof, stimulus_range=narrow_stimuli, normalize=False).droplevel(1, 1)
