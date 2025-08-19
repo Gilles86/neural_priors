@@ -9,7 +9,7 @@ import os
 import os.path as op
 from braincoder.optimize import ParameterFitter
 from braincoder.models import AlphaGaussianPRF
-from neural_priors.encoding_model2.models import AlphaDeltaModel
+from neural_priors.encoding_model.models import AlphaDeltaModel
 from braincoder.optimize import ResidualFitter
 import pingouin as pg
 
