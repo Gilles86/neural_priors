@@ -18,14 +18,14 @@ def main(roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=True, fit_res
     model_labels = list(range(0, 15))
 
     # model_labels = [0, 3, 4, 5] + list(range(12, 25))
-    model_labels = [0,3,4,5, 14, 15, 18, 25, 26, 27, 28, 29, 30, 31, 32,33]
+    model_labels = [0,3,4,5, 12, 14, 15, 18, 25, 26, 27, 28, 29, 30, 31, 32,33]
     subjects = [Subject(subject_id=subject_id) for subject_id in subject_ids]
     pars = []
 
     keys = []
     for sub, model_label, smoothed in product(subjects, model_labels, [True]):
         try:
-            pars.append(sub.get_prf_parameters_volume2(smoothed=smoothed, model_label=model_label, roi='NPCr', response_fit=fit_responses))
+            pars.append(sub.get_prf_parameters_volume(smoothed=smoothed, model_label=model_label, roi='NPCr', response_fit=fit_responses))
             keys.append((sub.subject_id, model_label, smoothed))
         except Exception as e:
             print(f"Failed for {sub.subject_id} model {model_label}: {e}")
