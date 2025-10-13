@@ -46,7 +46,7 @@ model {
     // Priors
     z_m_0_15 ~ std_normal();
     z_m_0_30 ~ std_normal();
-    sigma_0_15 ~ normal(2, 2); // Prior for global standard deviation function
+    sigma_0_15 ~ normal(3.5, 3.5); // Prior for global standard deviation function
     sigma_0_30 ~ normal(3.5, 3.5); 
     tau ~ normal(2, 5);    // Prior for the standard deviation tau of the subjects' means
     nu ~ normal(1, 2);     // Prior for the standard deviation nu of the subjects' std dev
