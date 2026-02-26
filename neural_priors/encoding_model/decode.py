@@ -28,7 +28,7 @@ def get_decoding_paradigm(sub, fit_responses=False, drop_levels=True):
 def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors', smoothed=True, debug=False, fit_responses=False,
          n_voxels=100, spherical_noise=False, separate_sigmas=False):
 
-    assert model_label in [15, 18], 'Only model 15 and 18 are supported for decoding'
+    assert model_label in [15, 18, 31], 'Only model 15 and 18 are supported for decoding'
 
 
     sub = Subject(subject_id=subject, bids_folder=bids_folder)
