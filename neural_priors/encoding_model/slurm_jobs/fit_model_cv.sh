@@ -44,6 +44,6 @@ done
 LOGFILE="/home/gdehol/logs/nprf2_fit_cv_${SLURM_ARRAY_JOB_ID}-${SLURM_ARRAY_TASK_ID}_model-${MODEL}_${SMOOTHED_SUFFIX}_${FIT_RESPONSES_SUFFIX}.txt"
 
 # Run the cross-validated encoding model fit and redirect output manually
-python $HOME/git/neural_priors/neural_priors/encoding_model2/fit_model_cv.py \
+python $HOME/git/neural_priors/neural_priors/encoding_model/fit_model_cv.py \
     $PARTICIPANT_LABEL --bids_folder /shares/zne.uzh/gdehol/ds-neuralpriors \
     $SMOOTHED_FLAG $FIT_RESPONSES_FLAG --model $MODEL > "$LOGFILE" 2>&1
