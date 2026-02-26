@@ -42,7 +42,8 @@ from neural_priors.encoding_model.models import AlphaDeltaModel, LinearScalingMo
 # Model 31: like model 25, but slope is fixed at 1.287794, whcih is the mean of the slopes across subjects according to model 15
 # Model 32: like model 31, but amplitude is allowed to vary, for every voxel individually
 # Model 33: Like model 31, but amplitude is allowed to vary, with subject-specific slope
-
+# Model 34: all parameters fixed except for amplitude
+# Model 35: all parameters fixed except for amplitude, same ratio across voxels
 def get_model(model_label):
 
     if model_label in [4, 5, 7, 8]:
@@ -73,6 +74,8 @@ def get_model(model_label):
         model = LinearScalingModel(separate_amplitudes=False, identity_below_range=True, separate_sds=True, sigma_fwhm=True)
     elif model_label in [32, 33]:
         model = LinearScalingModel(separate_amplitudes=True, identity_below_range=True, separate_sds=True)
+    elif model_label in [34, 35]:
+        model = LinearScalingModel(separate_amplitudes=True, identity_below_range=True, separate_sds=False, rescale_baseline=False)
     else:
         model = AlphaDeltaModel()
 
@@ -100,10 +103,10 @@ def get_grid(model_label):
 
     elif model_label in [28, 30]:
         sd_scales = [.6, .8, 1., 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6, 2.8]
-
     else:
         # sd_scales = [1.]
         sd_scales = [.6, .8, 1., 1.2, 1.4, 1.6]
+
 
     if model_label in range(6, 9):
         alphas = np.linspace(-1., 1., 5)
@@ -114,7 +117,7 @@ def get_grid(model_label):
     amplitudes = np.array([1.], dtype=np.float32)
     baselines = np.array([0], dtype=np.float32)
 
-    if model_label in [0]:
+    if model_label in [0, 34, 35]:
         delta_wides = [1.0]
     elif model_label in [1, 4, 7, 12, 13, 14, 15, 16, 17, 21, 22, 25, 26, 27, 28, 29, 30, 31, 32, 33]:
         delta_wides = [2.0]
@@ -151,6 +154,10 @@ def get_grid(model_label):
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes
         elif model_label in [32, 33]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes, amplitudes_alpha, amplitudes_beta
+        elif model_label in [34, 35]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'amplitude']
+            return modes, delta_wides, intersection_point, baselines, sds, amplitudes, amplitudes_alpha, amplitudes_beta
+
+        
 
 def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_brain=False):
 
@@ -178,7 +185,8 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_b
     if ((model_label in range(0, 6)) or (model_label > 8)) and ( model_label < 15):
         fixed_pars += ['alpha']
     else:
-        shared_pars += ['alpha']
+        if model_label in [6, 7, 8]:
+            shared_pars += ['alpha']
 
     if model_label in [0, 1, 4, 7, 12, 13, 14]:
         fixed_pars += ['delta_wide']
@@ -216,6 +224,13 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_b
 
     if model_label in [18, 19, 20, 23, 24]:
         shared_pars += ['delta_wide']
+
+    if model_label in [34]:
+        fixed_pars = ['delta_wide', 'amplitude_alpha']
+
+    if model_label in [35]:
+        shared_pars = ['amplitude_alpha', 'amplitude_beta']
+        fixed_pars = ['delta_wide']
 
     gd_pars = fitter.fit(max_n_iterations=max_n_iterations, init_pars=grid_pars,
                          shared_pars=shared_pars, fixed_pars=fixed_pars)
@@ -314,7 +329,7 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
 
             par_labels += ['baseline_ratio']
 
-        elif model_label in [21, 22, 23, 24, 32, 33]:
+        elif model_label in [21, 22, 23, 24, 32, 33, 34, 35]:
             pars[('amplitude', 'narrow')] = estimated_parameters['amplitude_narrow']
             pars[('amplitude', 'wide')] = estimated_parameters['amplitude_alpha'] + estimated_parameters['amplitude_beta'] * estimated_parameters['amplitude_narrow']
 
@@ -363,7 +378,7 @@ def get_paradigm(sub, fit_responses=False):
     return paradigm
 
 def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', debug=False, roi='NPCr',
-         fit_responses=False, whole_brain=False):
+         fit_responses=False, whole_brain=False, censored=False):
 
     max_n_iterations = 100 if debug else 5000
 
@@ -372,6 +387,9 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
 
     if whole_brain:
         key += '.whole_brain'
+
+    if censored:
+        key += '.censored'
 
     if smoothed:
         key += '.smoothed'
@@ -396,6 +414,10 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
         masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
 
     data = pd.DataFrame(masker.fit_transform(data), index=paradigm.index).astype(np.float32)
+
+    if censored:
+        data = data[paradigm['x'] < 26]
+        paradigm = paradigm[paradigm['x'] < 26]
 
     # Get model
     model = get_model(model_label)
@@ -427,8 +449,9 @@ if __name__ == '__main__':
     parser.add_argument('--smoothed', action='store_true')
     parser.add_argument('--fit_responses', action='store_true')
     parser.add_argument('--whole_brain', action='store_true')
+    parser.add_argument('--censored', action='store_true')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
     main(args.subject, model_label=args.model_label, smoothed=args.smoothed, bids_folder=args.bids_folder, debug=args.debug,
-         fit_responses=args.fit_responses, whole_brain=args.whole_brain)
+         fit_responses=args.fit_responses, whole_brain=args.whole_brain, censored=args.censored)

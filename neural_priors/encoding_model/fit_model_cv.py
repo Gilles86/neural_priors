@@ -12,7 +12,7 @@ from braincoder.models import RegressionGaussianPRF
 from fit_model import get_paradigm, get_model, fit_model
 
 def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', gaussian=True, debug=False, roi='NPCr',
-         fit_responses=False, whole_brain=False):
+         fit_responses=False, whole_brain=False, censored=False):
 
     max_n_iterations = 100 if debug else 5000
 
@@ -21,6 +21,9 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
 
     if whole_brain:
         key += '.whole_brain'    
+
+    if censored:
+        key += '.censored'
 
     if smoothed:
         key += '.smoothed'
@@ -48,6 +51,10 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
         masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
 
     data = pd.DataFrame(masker.fit_transform(data), index=paradigm.index).astype(np.float32)
+
+    if censored:
+        data = data[paradigm['x'] < 26]
+        paradigm = paradigm[paradigm['x'] < 26]
 
     all_cvr2 = []
 
@@ -86,7 +93,8 @@ if __name__ == '__main__':
     parser.add_argument('--fit_responses', action='store_true')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--whole_brain', action='store_true')
+    parser.add_argument('--censored', action='store_true')
     args = parser.parse_args()
 
     main(args.subject, model_label=args.model_label, smoothed=args.smoothed, bids_folder=args.bids_folder, debug=args.debug,
-         fit_responses=args.fit_responses, whole_brain=args.whole_brain)
+         fit_responses=args.fit_responses, whole_brain=args.whole_brain, censored=args.censored)

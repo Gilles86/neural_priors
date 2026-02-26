@@ -30,13 +30,21 @@ for arg in "$@"; do
             FIT_RESPONSES_FLAG="--fit_responses"
             FIT_RESPONSES_SUFFIX="fitresp"
             ;;
+
+        --censored)
+            CENSORED_FLAG="--censored"
+            CENSORED_SUFFIX="censored"
+            ;;
+        *)
+            echo "Warning: Unknown argument '$arg' will be ignored."
+            ;;
     esac
 done
 
 # Define dynamic log file
-LOGFILE="/home/gdehol/logs/nprf2_fit_whole_brain_cv_${SLURM_ARRAY_JOB_ID}-${SLURM_ARRAY_TASK_ID}_model-${MODEL}_${SMOOTHED_SUFFIX}_${FIT_RESPONSES_SUFFIX}.txt"
+LOGFILE="/home/gdehol/logs/nprf2_fit_whole_brain_cv_${SLURM_ARRAY_JOB_ID}-${SLURM_ARRAY_TASK_ID}_model-${MODEL}_${SMOOTHED_SUFFIX}_${FIT_RESPONSES_SUFFIX}_${CENSORED_SUFFIX}.txt"
 
 # Run the cross-validated encoding model fit and redirect output manually
 python $HOME/git/neural_priors/neural_priors/encoding_model2/fit_model_cv.py \
     $PARTICIPANT_LABEL --bids_folder /shares/zne.uzh/gdehol/ds-neuralpriors \
-    $SMOOTHED_FLAG $FIT_RESPONSES_FLAG --model $MODEL --whole_brain > "$LOGFILE" 2>&1
+    $SMOOTHED_FLAG $FIT_RESPONSES_FLAG $CENSORED_FLAG --model $MODEL --whole_brain > "$LOGFILE" 2>&1

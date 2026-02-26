@@ -29,6 +29,14 @@ for arg in "$@"; do
             FIT_RESPONSES_FLAG="--fit_responses"
             FIT_RESPONSES_SUFFIX="fitresp"
             ;;
+
+        --censored)
+            CENSORED_FLAG="--censored"
+            CENSORED_SUFFIX="censored"
+            ;;
+        --*)
+            echo "Warning: Unknown argument '$arg' will be ignored."
+            ;;
     esac
 done
 
