@@ -28,6 +28,7 @@ from neural_priors.encoding_model.models import AlphaDeltaModel, LinearScalingMo
 # Model 15: model 4 with free widths (same slope across voxels)
 # Model 16: model 4 with free amplitude (same intercept and slope across voxels)
 # Model 17: model 4 with free widths and free amplitudes (same intercept and slope across voxels)
+# Model 18: delta_wide is fitted, identity below 10, width is scaled with r_sigma. # mu, baseline, sd_narrow, amplitude + 2 shared (delta_wide, sd_wide_scale)
 
 # model 21: model 4 with free amplitudes (no baseline rescaling)
 # model 22: model 4 with free sd and free amplitudes (no baseline rescaling
