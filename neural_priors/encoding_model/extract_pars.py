@@ -1,49 +1,46 @@
-import os
-import os.path as op
 import argparse
+from pathlib import Path
 from neural_priors.utils.data import Subject, get_all_subject_ids
-from tqdm.contrib.itertools import product
+from tqdm import tqdm
 import pandas as pd
 
 
-def main(roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=True, fit_responses=False):
+def main(model_label, roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=True, fit_responses=False, censored=False):
 
-    key = 'encoding_models'
-
-    target_dir = op.join(bids_folder, 'derivatives', key)
+    target_dir = Path(bids_folder) / 'derivatives' / 'extracted_pars'
+    target_dir.mkdir(parents=True, exist_ok=True)
     print(f'Writing to {target_dir}')
-    os.makedirs(target_dir, exist_ok=True)
 
     subject_ids = get_all_subject_ids()
-    model_labels = list(range(0, 15))
+    subjects = [Subject(subject_id=subject_id, bids_folder=bids_folder) for subject_id in subject_ids]
 
-    # model_labels = [0, 3, 4, 5] + list(range(12, 25))
-    model_labels = [0,1,2,3,4,5, 12, 14, 15, 18, 25, 26, 27, 28, 29, 30, 31, 32,33]
-    model_labels = [3]
-
-    subjects = [Subject(subject_id=subject_id) for subject_id in subject_ids]
     pars = []
-
     keys = []
-    for sub, model_label, smoothed in product(subjects, model_labels, [True]):
+
+    for sub in tqdm(subjects, desc=f'Model {model_label}'):
         try:
-            pars.append(sub.get_prf_parameters_volume(smoothed=smoothed, model_label=model_label, roi=roi, response_fit=fit_responses))
+            pars.append(sub.get_prf_parameters_volume(smoothed=smoothed, model_label=model_label, roi=roi, response_fit=fit_responses, censored=censored))
             keys.append((sub.subject_id, model_label, smoothed))
         except Exception as e:
             print(f"Failed for {sub.subject_id} model {model_label}: {e}")
 
     pars = pd.concat(pars, keys=keys, names=['subject_id', 'model_label', 'smoothed'], axis=0)
     pars.columns.names = ['parameter', 'range']
-    
-    if fit_responses:
-        pars.to_csv(op.join(target_dir, f'group_roi-{roi}_desc-responses_parameters.tsv'), sep='\t')
-    else:
-        pars.to_csv(op.join(target_dir, f'group_roi-{roi}_desc-groundtruth_parameters.tsv'), sep='\t')
+
+    desc = 'responses' if fit_responses else 'groundtruth'
+    if censored:
+        desc += '.censored'
+    fn = target_dir / f'group_roi-{roi}_model-{model_label}_desc-{desc}_parameters.tsv'
+    pars.to_csv(fn, sep='\t')
+    print(f'Wrote {fn}')
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('roi', default='NPCr', type=str)
+    argparser.add_argument('model_label', type=int)
+    argparser.add_argument('--roi', default='NPCr', type=str)
     argparser.add_argument('--bids_folder', default='/data/ds-neuralpriors')
+    argparser.add_argument('--smoothed', action='store_true')
     argparser.add_argument('--fit_responses', action='store_true')
+    argparser.add_argument('--censored', action='store_true')
     args = argparser.parse_args()
-    main(roi=args.roi, bids_folder=args.bids_folder, fit_responses=args.fit_responses)
+    main(args.model_label, roi=args.roi, bids_folder=args.bids_folder, smoothed=args.smoothed, fit_responses=args.fit_responses, censored=args.censored)

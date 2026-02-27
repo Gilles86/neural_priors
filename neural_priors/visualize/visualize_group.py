@@ -23,7 +23,7 @@ def main(model_labels, bids_folder='/data/ds-neuralpriors', vmin=10, vmax=25, cv
 
     thresholds = {'r2': 0.01, 'cvr2_count': 0.2}
 
-    cmaps = {'r2': 'magma', 'cvr2_count': 'magma',
+    cmaps = {'r2': 'inferno', 'cvr2_count': 'magma',
                 'mu.narrow': 'nipy_spectral', 'mu.wide': 'nipy_spectral'}
 
     for model_label in model_labels:

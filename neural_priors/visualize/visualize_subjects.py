@@ -13,6 +13,9 @@ from tqdm.contrib.itertools import product
 
 def main(subjects, model_labels, bids_folder='/data/ds-neuralpriors', vmin=10, vmax=25, cvr2_thr=0.0):
 
+    if subjects is None:
+        subjects = range(1, 42)
+
     subjects = ['{:02d}'.format(int(s)) for s in subjects]
 
     for key in ['11', '23']:
@@ -26,7 +29,7 @@ def main(subjects, model_labels, bids_folder='/data/ds-neuralpriors', vmin=10, v
         sub = Subject(subject_id=subject)
 
         for model_label in model_labels:
-            pars = sub.get_prf_parameters_surf2(model_label=model_label, smoothed=True, space='fsaverage')
+            pars = sub.get_prf_parameters_surf(model_label=model_label, smoothed=True, space='fsaverage')
             pars.loc[(pars['mu.narrow'] < vmin) | (pars['mu.wide'] < vmin), 'cvr2'] = -1.
             pars.loc[(pars['mu.narrow'] > vmax), 'cvr2'] = -1.
 

@@ -19,7 +19,7 @@ def main(subject, model_labels, bids_folder='/data/ds-neuralpriors', vmin=5, vma
     ds = {}
 
     for model_label in model_labels:
-        pars = sub.get_prf_parameters_surf2(model_label=model_label, smoothed=True)
+        pars = sub.get_prf_parameters_surf(model_label=model_label, smoothed=True)
         pars.loc[(pars['mu.narrow'] < vmin) | (pars['mu.wide'] < vmin), 'cvr2'] = -1.
 
         ds[f'{subject}.model{model_label}.cvr2_thr'] = get_alpha_vertex(pars['cvr2'].values, (pars['cvr2'] > cvr2_thr).values, vmin=0.0, vmax=.05, subject=f'neuralpriors.sub-{subject}', cmap='plasma')

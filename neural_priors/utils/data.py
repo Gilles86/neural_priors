@@ -337,11 +337,14 @@ class Subject(object):
 
 
     def get_prf_parameters_volume(self, model_label, smoothed=True, roi=None, response_fit=False, return_image=False,
-                                   raw=False, par_keys=None):
+                                   raw=False, par_keys=None, censored=False):
 
         if par_keys is None:
             par_keys = ['mu', 'sd', 'delta_wide', 'amplitude', 'baseline']
 
+            # Model 3 has free lower_bound_range per voxel, need to load it
+            if raw and model_label in [3]:
+                par_keys.append('lower_bound_range')
 
         # Create target folder
         key = f'model{model_label}'
@@ -350,6 +353,10 @@ class Subject(object):
         if roi != 'NPCr':
             key += '.whole_brain'
             cv_key += '.whole_brain'
+
+        if censored:
+            key += '.censored'
+            cv_key += '.censored'
 
         if smoothed:
             key += '.smoothed'
@@ -380,7 +387,22 @@ class Subject(object):
 
         if raw:
 
-            if model_label in [15, 18]:
+            if model_label in [0, 4, 5]:
+                # AlphaDeltaModel: alpha and lower_bound_range are fixed
+                parameter_labels = ['mu_narrow', 'alpha', 'delta_wide', 'lower_bound_range', 'sd', 'amplitude', 'baseline']
+                pars[('alpha', 0)] = 1e-4
+                pars[('lower_bound_range', 0)] = 10.
+                pars = pars[[('mu', 'narrow'), ('alpha', 0), ('delta_wide', 'narrow'), ('lower_bound_range', 0), ('sd', 'narrow'), ('amplitude', 'narrow'), ('baseline', 'narrow')]]
+                pars.columns = parameter_labels
+
+            elif model_label in [3]:
+                # AlphaDeltaModel: alpha fixed, lower_bound_range free (loaded via par_keys)
+                parameter_labels = ['mu_narrow', 'alpha', 'delta_wide', 'lower_bound_range', 'sd', 'amplitude', 'baseline']
+                pars[('alpha', 0)] = 1e-4
+                pars = pars[[('mu', 'narrow'), ('alpha', 0), ('delta_wide', 'narrow'), ('lower_bound_range', 'narrow'), ('sd', 'narrow'), ('amplitude', 'narrow'), ('baseline', 'narrow')]]
+                pars.columns = parameter_labels
+
+            elif model_label in [15, 18]:
 
                 parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude']
                 pars[('alpha',0 )] = 1e-6
@@ -396,6 +418,27 @@ class Subject(object):
                 pars[('sd_scale', 0)] = pars[('sd', 'wide')] / pars[('sd', 'narrow')]
 
                 pars = pars[[('mu', 'narrow'), ('delta_wide', 'narrow'), ('lower_bound_range', 0), ('baseline', 'narrow'), ('sd', 'narrow'), ('sd_scale', 0), ('amplitude', 'narrow')]]
+                pars.columns = parameter_labels
+
+            elif model_label in [34]:
+                # LinearScalingModel, separate_amplitudes, amplitude_alpha=0 fixed
+                parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta']
+                pars[('lower_bound_range', 0)] = 10.
+                pars[('amplitude_alpha', 0)] = 0.
+                pars[('amplitude_beta', 0)] = pars[('amplitude', 'wide')] / pars[('amplitude', 'narrow')]
+                pars = pars[[('mu', 'narrow'), ('delta_wide', 'narrow'), ('lower_bound_range', 0), ('baseline', 'narrow'), ('sd', 'narrow'), ('amplitude', 'narrow'), ('amplitude_alpha', 0), ('amplitude_beta', 0)]]
+                pars.columns = parameter_labels
+
+            elif model_label in [35]:
+                # LinearScalingModel, separate_amplitudes, amplitude_alpha and amplitude_beta shared
+                # Recover shared amplitude_alpha/amplitude_beta via linear regression
+                from scipy.stats import linregress
+                parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta']
+                pars[('lower_bound_range', 0)] = 10.
+                slope, intercept, _, _, _ = linregress(pars[('amplitude', 'narrow')].values, pars[('amplitude', 'wide')].values)
+                pars[('amplitude_alpha', 0)] = intercept
+                pars[('amplitude_beta', 0)] = slope
+                pars = pars[[('mu', 'narrow'), ('delta_wide', 'narrow'), ('lower_bound_range', 0), ('baseline', 'narrow'), ('sd', 'narrow'), ('amplitude', 'narrow'), ('amplitude_alpha', 0), ('amplitude_beta', 0)]]
                 pars.columns = parameter_labels
 
             else:

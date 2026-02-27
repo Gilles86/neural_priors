@@ -1,5 +1,6 @@
 {
     "chat.tools.terminal.autoApprove": {
-        "git commit": true
+        "git commit": true,
+        "git add": true
     }
 }
