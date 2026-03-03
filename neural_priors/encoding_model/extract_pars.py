@@ -52,13 +52,30 @@ def main(model_label, roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=
                      / f'sub-{sub.subject_id}_desc-loglikelihood_roi-{roi}_space-T1w_pars.nii.gz')
 
             if model_label == -1:
-                # Null model has no pRF parameters; only load loglikelihood
+                # Null model has no pRF parameters; load loglikelihood and cvr2
                 if not ll_fn.exists():
                     print(f"No loglikelihood file for {sub.subject_id}, skipping")
                     continue
                 masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
                 ll = pd.Series(masker.transform(str(ll_fn)).squeeze(), name=('loglikelihood', None))
                 sub_pars = ll.to_frame()
+
+                # Load cvr2 from fit_model_cv output
+                cvr2_key = f'model{model_label}.cv'
+                if censored:
+                    cvr2_key += '.censored'
+                if smoothed:
+                    cvr2_key += '.smoothed'
+                if fit_responses:
+                    cvr2_key += '.fit_responses'
+                cvr2_fn = (Path(bids_folder) / 'derivatives' / 'encoding_models' / cvr2_key
+                           / f'sub-{sub.subject_id}' / 'func'
+                           / f'sub-{sub.subject_id}_desc-cvr2.optim_space-T1w_pars.nii.gz')
+                if cvr2_fn.exists():
+                    cvr2 = pd.Series(masker.transform(str(cvr2_fn)).squeeze(), name=('cvr2', None))
+                    sub_pars = pd.concat([sub_pars, cvr2], axis=1)
+                else:
+                    print(f"Warning: no cvr2 file for {sub.subject_id} model -1")
             else:
                 sub_pars = sub.get_prf_parameters_volume(smoothed=smoothed, model_label=model_label, roi=roi, response_fit=fit_responses, censored=censored, use_nifti=True)
                 if ll_fn.exists():

@@ -12,10 +12,31 @@ MultiIndex columns from get_prf_parameters_volume are flattened:
 
 import argparse
 from pathlib import Path
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from neural_priors.utils.data import Subject, get_all_subject_ids
+from neural_priors.encoding_model.fit_model import get_paradigm
 
+
+# Number of free parameters per voxel for each model (per-voxel free + shared counted as 1 + sigma).
+# Shared parameters are counted conservatively as one per voxel.
+N_PARAMETERS = {
+    -1: 2,   # mean + sigma
+    0:  5,   # mu, sd, amp, baseline + sigma  (lb, alpha, delta_wide fixed)
+    1:  5,   # same as 0 (delta_wide=2 fixed)
+    2:  6,   # + shared delta_wide
+    3:  7,   # mu, delta_wide, lb, sd, amp, baseline + sigma
+    4:  5,   # same as 1 with identity_below_range
+    5:  6,   # + shared delta_wide
+    14: 6,   # mu, sd_narrow, sd_wide, amp, baseline + sigma
+    15: 6,   # mu, baseline, sd_narrow, amp + shared sd_wide_scale + sigma
+    31: 5,   # mu, baseline, sd_narrow, amp + sigma  (delta_wide, sd_wide_scale fixed)
+    32: 6,   # mu, baseline, sd_narrow, amp_narrow, amp_beta + sigma
+    33: 6,   # mu, baseline, sd_narrow, amp_narrow + shared amp_beta + sigma
+    34: 7,   # mu, lb, baseline, sd, amp_narrow, amp_beta + sigma
+    35: 8,   # mu, lb, baseline, sd, amp_narrow + shared amp_alpha, amp_beta + sigma
+}
 
 MODELS = {
     -1: 'No tuning (null model)',
@@ -49,6 +70,20 @@ def main(models=None, roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=
     for subject_id in tqdm(subject_ids, desc='Subjects'):
         sub = Subject(subject_id, bids_folder=bids_folder)
 
+        # Get masker and n_obs once per subject (used for loglikelihood loading and BIC)
+        try:
+            masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+        except Exception as e:
+            print(f'Warning: could not get masker for {subject_id}: {e}')
+            masker = None
+
+        try:
+            paradigm = get_paradigm(sub, fit_responses=False)
+            n_obs = int((paradigm['x'] < 26).sum()) if censored else len(paradigm)
+        except Exception as e:
+            print(f'Warning: could not get n_obs for {subject_id}: {e}')
+            n_obs = None
+
         for model_label in models:
             model_name = MODELS.get(model_label, str(model_label))
 
@@ -62,10 +97,13 @@ def main(models=None, roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=
                 ll_fn = (Path(bids_folder) / 'derivatives' / 'encoding_models' / ll_key
                          / f'sub-{subject_id}' / 'func'
                          / f'sub-{subject_id}_desc-loglikelihood_roi-{roi}_space-T1w_pars.nii.gz')
-                if ll_fn.exists():
-                    masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+                if ll_fn.exists() and masker is not None:
                     ll = masker.transform(str(ll_fn)).squeeze()
                     pars = pd.DataFrame({'loglikelihood': ll})
+                    k = N_PARAMETERS.get(-1)
+                    pars['aic'] = 2 * k - 2 * pars['loglikelihood']
+                    if n_obs is not None:
+                        pars['bic'] = np.log(n_obs) * k - 2 * pars['loglikelihood']
                     pars['subject'] = subject_id
                     pars['model_label'] = model_label
                     pars['model'] = model_name
@@ -87,6 +125,26 @@ def main(models=None, roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=
                         '_'.join(c for c in col if c and c != 'nan')
                         for col in pars.columns
                     ]
+
+                    # Load loglikelihood and compute AIC/BIC
+                    ll_key = f'model{model_label}'
+                    if censored:
+                        ll_key += '.censored'
+                    if smoothed:
+                        ll_key += '.smoothed'
+                    if response_fit:
+                        ll_key += '.fit_responses'
+                    ll_fn = (Path(bids_folder) / 'derivatives' / 'encoding_models' / ll_key
+                             / f'sub-{subject_id}' / 'func'
+                             / f'sub-{subject_id}_desc-loglikelihood_roi-{roi}_space-T1w_pars.nii.gz')
+                    if ll_fn.exists() and masker is not None:
+                        ll = masker.transform(str(ll_fn)).squeeze()
+                        pars['loglikelihood'] = ll
+                        if model_label in N_PARAMETERS:
+                            k = N_PARAMETERS[model_label]
+                            pars['aic'] = 2 * k - 2 * pars['loglikelihood']
+                            if n_obs is not None:
+                                pars['bic'] = np.log(n_obs) * k - 2 * pars['loglikelihood']
 
                     pars['subject'] = subject_id
                     pars['model_label'] = model_label

@@ -49,6 +49,25 @@ from neural_priors.encoding_model.models import AlphaDeltaModel, LinearScalingMo
 
 # Model 115 - model 145, these are all versions of model 31, buth the slope is changed between 1.15 and 1.45
 
+# Number of free parameters per voxel (per-voxel free + shared counted as 1 + sigma for noise).
+# Used for AIC/BIC computation: AIC = 2k - 2*LL, BIC = ln(n)*k - 2*LL
+N_PARAMETERS = {
+    -1: 2,   # mean + sigma
+    0:  5,   # mu, sd, amp, baseline + sigma  (lb, alpha, delta_wide fixed)
+    1:  5,   # same as 0 (delta_wide=2 fixed)
+    2:  6,   # + shared delta_wide
+    3:  7,   # mu, delta_wide, lb, sd, amp, baseline + sigma
+    4:  5,   # same as 1 with identity_below_range
+    5:  6,   # + shared delta_wide
+    14: 6,   # mu, sd_narrow, sd_wide, amp, baseline + sigma
+    15: 6,   # mu, baseline, sd_narrow, amp + shared sd_wide_scale + sigma
+    31: 5,   # mu, baseline, sd_narrow, amp + sigma  (delta_wide, sd_wide_scale fixed)
+    32: 6,   # mu, baseline, sd_narrow, amp_narrow, amp_beta + sigma
+    33: 6,   # mu, baseline, sd_narrow, amp_narrow + shared amp_beta + sigma
+    34: 7,   # mu, lb, baseline, sd, amp_narrow, amp_beta + sigma
+    35: 8,   # mu, lb, baseline, sd, amp_narrow + shared amp_alpha, amp_beta + sigma
+}
+
 def get_model(model_label):
 
     if model_label in [4, 5, 7, 8]:
