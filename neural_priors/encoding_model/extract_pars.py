@@ -47,18 +47,27 @@ def main(model_label, roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=
 
     for sub in tqdm(subjects, desc=f'Model {model_label}'):
         try:
-            sub_pars = sub.get_prf_parameters_volume(smoothed=smoothed, model_label=model_label, roi=roi, response_fit=fit_responses, censored=censored)
-
             ll_fn = (Path(bids_folder) / 'derivatives' / 'encoding_models' / ll_key
                      / f'sub-{sub.subject_id}' / 'func'
                      / f'sub-{sub.subject_id}_desc-loglikelihood_roi-{roi}_space-T1w_pars.nii.gz')
-            if ll_fn.exists():
-                try:
-                    masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
-                    ll = pd.Series(masker.transform(str(ll_fn)).squeeze(), name=('loglikelihood', None))
-                    sub_pars = pd.concat([sub_pars, ll], axis=1)
-                except Exception as e:
-                    print(f"Warning: could not load loglikelihood for {sub.subject_id}: {e}")
+
+            if model_label == -1:
+                # Null model has no pRF parameters; only load loglikelihood
+                if not ll_fn.exists():
+                    print(f"No loglikelihood file for {sub.subject_id}, skipping")
+                    continue
+                masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+                ll = pd.Series(masker.transform(str(ll_fn)).squeeze(), name=('loglikelihood', None))
+                sub_pars = ll.to_frame()
+            else:
+                sub_pars = sub.get_prf_parameters_volume(smoothed=smoothed, model_label=model_label, roi=roi, response_fit=fit_responses, censored=censored, use_nifti=True)
+                if ll_fn.exists():
+                    try:
+                        masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+                        ll = pd.Series(masker.transform(str(ll_fn)).squeeze(), name=('loglikelihood', None))
+                        sub_pars = pd.concat([sub_pars, ll], axis=1)
+                    except Exception as e:
+                        print(f"Warning: could not load loglikelihood for {sub.subject_id}: {e}")
 
             pars.append(sub_pars)
             keys.append((sub.subject_id, model_label, smoothed))

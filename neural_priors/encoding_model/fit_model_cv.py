@@ -65,12 +65,20 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
         test_data, test_paradigm = data.loc[(test_session, test_run)].copy().astype(np.float32), paradigm.loc[(test_session, test_run)].copy().astype(np.float32)
         train_data, train_paradigm = data.drop((test_session, test_run)).copy(), paradigm.drop((test_session, test_run)).copy()
 
-        # Get model
-        model = get_model(model_label)
+        if model_label == -1:
+            # Null model: predict the per-voxel mean of the training set
+            train_mean = train_data.mean(axis=0)
+            test_pred = pd.DataFrame(
+                np.tile(train_mean.values, (len(test_data), 1)),
+                index=test_data.index,
+                columns=test_data.columns,
+            )
+        else:
+            # Get model
+            model = get_model(model_label)
+            gd_pars = fit_model(model_label, model, train_data, train_paradigm, max_n_iterations=max_n_iterations)
+            test_pred = model.predict(parameters=gd_pars, paradigm=test_paradigm)
 
-        gd_pars = fit_model(model_label, model, train_data, train_paradigm, max_n_iterations=max_n_iterations)        
-
-        test_pred = model.predict(parameters=gd_pars, paradigm=test_paradigm)
         cv_r2 = get_rsq(test_data, test_pred)
 
         print(f'CV R2: {cv_r2}')
