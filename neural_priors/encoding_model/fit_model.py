@@ -210,7 +210,7 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_b
         shared_pars += ['baseline_ratio']
 
     # MODELS ABOVE 14 (LinearScalingModel)
-    if model_label in [15, 16, 17, 21, 22, 25, 26, 27, 28, 29, 30, 31, 32, 33]:
+    if model_label in [15, 16, 17, 21, 22, 25, 26, 27, 28, 29, 30, 31, 32, 33] or (model_label > 100):
         fixed_pars += ['delta_wide']
 
     if model_label in ([25, 27, 29, 31, 32, 33]) or (model_label > 100):
