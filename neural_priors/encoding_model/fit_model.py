@@ -287,6 +287,122 @@ def fit_model_cv(data, paradigm, model_label, max_n_iterations=2000):
 
     return mean_cvr2
 
+def conditionspecific_to_raw_pars(model_label, pars_cs):
+    """
+    Inverse of get_conditionspecific_parameters.
+
+    Reconstructs raw optimizer parameter DataFrame (columns = parameter_labels)
+    from the condition-specific (narrow/wide) DataFrame loaded by
+    get_prf_parameters_volume (MultiIndex columns: (parameter, range)).
+
+    For parameters that are shared across voxels (amplitude_alpha/beta,
+    baseline_ratio for certain models) the values are recovered via linear
+    regression or are read from the file where they were stored as a
+    constant per-voxel column.
+
+    Parameters
+    ----------
+    model_label : int
+    pars_cs : pd.DataFrame
+        MultiIndex columns (parameter, range).
+
+    Returns
+    -------
+    pd.DataFrame  –  columns matching the model's parameter_labels.
+    """
+    from scipy.stats import linregress
+
+    raw = pd.DataFrame(index=pars_cs.index)
+    raw['mu_narrow'] = pars_cs[('mu', 'narrow')]
+
+    # ------------------------------------------------------------------
+    # AlphaDeltaModel  (models 0 – 14)
+    # All of alpha, delta_wide, lower_bound_range are stored in files.
+    # ------------------------------------------------------------------
+    if model_label <= 14:
+        raw['alpha']             = pars_cs[('alpha', 'narrow')]
+        raw['delta_wide']        = pars_cs[('delta_wide', 'narrow')]
+        raw['lower_bound_range'] = pars_cs[('lower_bound_range', 'narrow')]
+
+        # sd
+        if model_label == 14:          # separate_sds
+            raw['sd_narrow'] = pars_cs[('sd', 'narrow')]
+            raw['sd_wide']   = pars_cs[('sd', 'wide')]
+        else:
+            raw['sd'] = pars_cs[('sd', 'narrow')]
+
+        # amplitude
+        if model_label in [10, 11, 12, 13]:   # separate_amplitudes
+            raw['amplitude_narrow'] = pars_cs[('amplitude', 'narrow')]
+            raw['amplitude_wide']   = pars_cs[('amplitude', 'wide')]
+        else:
+            raw['amplitude'] = pars_cs[('amplitude', 'narrow')]
+
+        # baseline
+        if model_label == 12:          # separate_baselines
+            raw['baseline_narrow'] = pars_cs[('baseline', 'narrow')]
+            raw['baseline_wide']   = pars_cs[('baseline', 'wide')]
+        else:
+            raw['baseline'] = pars_cs[('baseline', 'narrow')]
+
+        if model_label in [11, 13]:    # rescale_baseline – stored as shared column
+            raw['baseline_ratio'] = pars_cs[('baseline_ratio', 'narrow')]
+
+    # ------------------------------------------------------------------
+    # LinearScalingModel  (models 15+)
+    # lower_bound_range is never written to files → always 10.
+    # ------------------------------------------------------------------
+    else:
+        raw['delta_wide']        = pars_cs[('delta_wide', 'narrow')]
+        raw['lower_bound_range'] = 10.
+
+        # sd
+        if model_label in ([15, 17, 18, 20, 22, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33]) or (model_label > 100):
+            raw['sd_narrow']     = pars_cs[('sd', 'narrow')]
+            raw['sd_wide_scale'] = pars_cs[('sd', 'wide')] / pars_cs[('sd', 'narrow')]
+        else:
+            raw['sd'] = pars_cs[('sd', 'narrow')]
+
+        # amplitude + baseline
+        if model_label in [16, 17, 19, 20]:
+            # rescale_baseline: baseline_narrow = baseline - amp_narrow * baseline_ratio
+            # → baseline = baseline_narrow + amp_narrow * baseline_ratio
+            raw['baseline_ratio'] = pars_cs[('baseline_ratio', 'narrow')]
+            raw['baseline'] = (pars_cs[('baseline', 'narrow')]
+                               + pars_cs[('amplitude', 'narrow')] * pars_cs[('baseline_ratio', 'narrow')])
+            raw['amplitude_narrow'] = pars_cs[('amplitude', 'narrow')]
+            # amplitude_alpha/beta are shared → recover via linregress
+            slope, intercept, *_ = linregress(
+                pars_cs[('amplitude', 'narrow')].values,
+                pars_cs[('amplitude', 'wide')].values)
+            raw['amplitude_alpha'] = intercept
+            raw['amplitude_beta']  = slope
+
+        elif model_label in [32, 34]:
+            # amplitude_alpha = 0 fixed; amplitude_beta = wide / narrow (per voxel)
+            raw['baseline']         = pars_cs[('baseline', 'narrow')]
+            raw['amplitude_narrow'] = pars_cs[('amplitude', 'narrow')]
+            raw['amplitude_alpha']  = 0.
+            raw['amplitude_beta']   = pars_cs[('amplitude', 'wide')] / pars_cs[('amplitude', 'narrow')]
+
+        elif model_label in [21, 22, 23, 24, 33, 35]:
+            # amplitude_alpha/beta shared across voxels → linregress
+            raw['baseline']         = pars_cs[('baseline', 'narrow')]
+            raw['amplitude_narrow'] = pars_cs[('amplitude', 'narrow')]
+            slope, intercept, *_ = linregress(
+                pars_cs[('amplitude', 'narrow')].values,
+                pars_cs[('amplitude', 'wide')].values)
+            raw['amplitude_alpha'] = intercept
+            raw['amplitude_beta']  = slope
+
+        else:
+            # single amplitude: models 15, 18, 25–31, >100
+            raw['baseline']   = pars_cs[('baseline', 'narrow')]
+            raw['amplitude']  = pars_cs[('amplitude', 'narrow')]
+
+    return raw
+
+
 def get_conditionspecific_parameters(model_label, estimated_parameters):
     
     pars = pd.DataFrame()

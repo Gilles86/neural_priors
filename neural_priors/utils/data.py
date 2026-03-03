@@ -342,9 +342,13 @@ class Subject(object):
         if par_keys is None:
             par_keys = ['mu', 'sd', 'delta_wide', 'amplitude', 'baseline']
 
-            # Model 3 has free lower_bound_range per voxel, need to load it
-            if raw and model_label in [3]:
-                par_keys.append('lower_bound_range')
+            if raw:
+                # AlphaDeltaModel stores alpha and lower_bound_range in files
+                if model_label <= 14:
+                    par_keys += ['alpha', 'lower_bound_range']
+                # baseline_ratio is stored for these models
+                if model_label in [11, 13, 16, 17, 19, 20]:
+                    par_keys += ['baseline_ratio']
 
         # Create target folder
         key = f'model{model_label}'
@@ -386,63 +390,8 @@ class Subject(object):
         pars = pd.concat(pars, axis=1, names=['parameter', 'range'])
 
         if raw:
-
-            if model_label in [0, 4, 5]:
-                # AlphaDeltaModel: alpha and lower_bound_range are fixed
-                parameter_labels = ['mu_narrow', 'alpha', 'delta_wide', 'lower_bound_range', 'sd', 'amplitude', 'baseline']
-                pars[('alpha', 0)] = 1e-4
-                pars[('lower_bound_range', 0)] = 10.
-                pars = pars[[('mu', 'narrow'), ('alpha', 0), ('delta_wide', 'narrow'), ('lower_bound_range', 0), ('sd', 'narrow'), ('amplitude', 'narrow'), ('baseline', 'narrow')]]
-                pars.columns = parameter_labels
-
-            elif model_label in [3]:
-                # AlphaDeltaModel: alpha fixed, lower_bound_range free (loaded via par_keys)
-                parameter_labels = ['mu_narrow', 'alpha', 'delta_wide', 'lower_bound_range', 'sd', 'amplitude', 'baseline']
-                pars[('alpha', 0)] = 1e-4
-                pars = pars[[('mu', 'narrow'), ('alpha', 0), ('delta_wide', 'narrow'), ('lower_bound_range', 'narrow'), ('sd', 'narrow'), ('amplitude', 'narrow'), ('baseline', 'narrow')]]
-                pars.columns = parameter_labels
-
-            elif model_label in [15, 18]:
-
-                parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude']
-                pars[('alpha',0 )] = 1e-6
-                pars[('lower_bound',0 )] = 10.
-                pars[('sd_scale', 0)] = pars[('sd', 'wide')] / pars[('sd', 'narrow')]
-                pars = pars[[('mu', 'narrow'), ('delta_wide', 'narrow'), ('lower_bound', 0), ('baseline', 'narrow'), ('sd', 'narrow'), ('sd_scale', 0), ('amplitude', 'narrow')]]
-
-                pars.columns = parameter_labels
-
-            elif model_label in [31]:
-                parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude']
-                pars[('lower_bound_range',0 )] = 10
-                pars[('sd_scale', 0)] = pars[('sd', 'wide')] / pars[('sd', 'narrow')]
-
-                pars = pars[[('mu', 'narrow'), ('delta_wide', 'narrow'), ('lower_bound_range', 0), ('baseline', 'narrow'), ('sd', 'narrow'), ('sd_scale', 0), ('amplitude', 'narrow')]]
-                pars.columns = parameter_labels
-
-            elif model_label in [34]:
-                # LinearScalingModel, separate_amplitudes, amplitude_alpha=0 fixed
-                parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta']
-                pars[('lower_bound_range', 0)] = 10.
-                pars[('amplitude_alpha', 0)] = 0.
-                pars[('amplitude_beta', 0)] = pars[('amplitude', 'wide')] / pars[('amplitude', 'narrow')]
-                pars = pars[[('mu', 'narrow'), ('delta_wide', 'narrow'), ('lower_bound_range', 0), ('baseline', 'narrow'), ('sd', 'narrow'), ('amplitude', 'narrow'), ('amplitude_alpha', 0), ('amplitude_beta', 0)]]
-                pars.columns = parameter_labels
-
-            elif model_label in [35]:
-                # LinearScalingModel, separate_amplitudes, amplitude_alpha and amplitude_beta shared
-                # Recover shared amplitude_alpha/amplitude_beta via linear regression
-                from scipy.stats import linregress
-                parameter_labels = ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta']
-                pars[('lower_bound_range', 0)] = 10.
-                slope, intercept, _, _, _ = linregress(pars[('amplitude', 'narrow')].values, pars[('amplitude', 'wide')].values)
-                pars[('amplitude_alpha', 0)] = intercept
-                pars[('amplitude_beta', 0)] = slope
-                pars = pars[[('mu', 'narrow'), ('delta_wide', 'narrow'), ('lower_bound_range', 0), ('baseline', 'narrow'), ('sd', 'narrow'), ('amplitude', 'narrow'), ('amplitude_alpha', 0), ('amplitude_beta', 0)]]
-                pars.columns = parameter_labels
-
-            else:
-                raise ValueError('raw is not implemented for this model')
+            from neural_priors.encoding_model.fit_model import conditionspecific_to_raw_pars
+            pars = conditionspecific_to_raw_pars(model_label, pars)
 
         if return_image:
             return masker.inverse_transform(pars.T)

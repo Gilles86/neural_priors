@@ -1,0 +1,3 @@
+[submodule "libs/braincoder"]
+	path = libs/braincoder
+	url = https://github.com/Gilles86/braincoder.git
