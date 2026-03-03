@@ -16,23 +16,19 @@ PARTICIPANT_LABEL=$(printf "%02d" $SLURM_ARRAY_TASK_ID)
 MODEL=${1:?Error: No model number provided}
 SMOOTHED_FLAG=""
 FIT_RESPONSES_FLAG=""
-SMOOTHED_SUFFIX="raw"
-FIT_RESPONSES_SUFFIX="nofit"
+CENSORED_FLAG=""
 
 # Parse script arguments
 for arg in "$@"; do
     case "$arg" in
         --smoothed)
             SMOOTHED_FLAG="--smoothed"
-            SMOOTHED_SUFFIX="smoothed"
             ;;
         --fit_responses)
             FIT_RESPONSES_FLAG="--fit_responses"
-            FIT_RESPONSES_SUFFIX="fitresp"
             ;;
         --censored)
             CENSORED_FLAG="--censored"
-            CENSORED_SUFFIX="censored"
             ;;
         --*)
             echo "Warning: Unknown argument '$arg' will be ignored."
@@ -40,8 +36,14 @@ for arg in "$@"; do
     esac
 done
 
+# Build suffix from active flags only
+SUFFIX=""
+[[ -n "$SMOOTHED_FLAG" ]] && SUFFIX="${SUFFIX}_smoothed"
+[[ -n "$FIT_RESPONSES_FLAG" ]] && SUFFIX="${SUFFIX}_fitresp"
+[[ -n "$CENSORED_FLAG" ]] && SUFFIX="${SUFFIX}_censored"
+
 # Define dynamic log file
-LOGFILE="/home/gdehol/logs/nprf2_fit_whole_brain_${SLURM_ARRAY_JOB_ID}-${SLURM_ARRAY_TASK_ID}_model-${MODEL}_${SMOOTHED_SUFFIX}_${FIT_RESPONSES_SUFFIX}_${CENSORED_SUFFIX}.txt"
+LOGFILE="/home/gdehol/logs/nprf2_fit_whole_brain_sub-${PARTICIPANT_LABEL}_model-${MODEL}${SUFFIX}.txt"
 
 # Run the encoding model fit and redirect output manually
 python $HOME/git/neural_priors/neural_priors/encoding_model/fit_model.py \

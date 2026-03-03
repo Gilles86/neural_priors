@@ -12,13 +12,11 @@ source activate neural_priors2
 
 MODEL=${1:?Error: No model number provided}
 FIT_RESPONSES_FLAG=""
-FIT_RESPONSES_SUFFIX="nofit"
 
 for arg in "$@"; do
     case "$arg" in
         --fit_responses)
             FIT_RESPONSES_FLAG="--fit_responses"
-            FIT_RESPONSES_SUFFIX="fitresp"
             ;;
         --*)
             echo "Warning: Unknown argument '$arg' will be ignored."
@@ -26,7 +24,11 @@ for arg in "$@"; do
     esac
 done
 
-LOGFILE="/home/gdehol/logs/nprf2_likelihood_${SLURM_JOB_ID}_model-${MODEL}_smoothed_${FIT_RESPONSES_SUFFIX}.txt"
+# Build suffix from active flags only
+SUFFIX="_smoothed"
+[[ -n "$FIT_RESPONSES_FLAG" ]] && SUFFIX="${SUFFIX}_fitresp"
+
+LOGFILE="/home/gdehol/logs/nprf2_likelihood_model-${MODEL}${SUFFIX}.txt"
 
 for SUBJECT in $(seq -w 1 41); do
     echo "Running subject ${SUBJECT}, model ${MODEL}, fit_responses=${FIT_RESPONSES_SUFFIX}"
