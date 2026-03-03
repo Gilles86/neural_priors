@@ -1,7 +1,6 @@
 
 import argparse
 import numpy as np
-import pandas as pd
 from pathlib import Path
 from neural_priors.encoding_model.fit_model import get_model, get_paradigm
 from neural_priors.utils.data import Subject
@@ -44,8 +43,10 @@ def main(subject, model_label, roi, bids_folder, smoothed, fit_responses, censor
     subj_str = f"{int(subject):02d}"
     outdir = Path(bids_folder) / "derivatives" / "encoding_models" / key / f"sub-{subj_str}" / "func"
     outdir.mkdir(parents=True, exist_ok=True)
-    outfile = outdir / f"sub-{subj_str}_desc-likelihood_roi-{roi}.tsv"
-    pd.DataFrame({"loglikelihood": ll}).to_csv(outfile, sep="\t", index=False)
+
+    masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+    outfile = outdir / f"sub-{subj_str}_desc-loglikelihood_roi-{roi}_space-T1w_pars.nii.gz"
+    masker.inverse_transform(ll).to_filename(str(outfile))
     print(f"Wrote likelihoods to {outfile}")
 
 if __name__ == "__main__":
