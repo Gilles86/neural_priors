@@ -26,19 +26,26 @@ Scripts are run directly as Python modules with subject IDs and BIDS folder path
 ```bash
 # Fit encoding model for subject 01 with model 31, smoothed data
 python neural_priors/encoding_model/fit_model.py 01 \
-    --bids_folder /data/ds-neuralpriors --model 31 --smoothed
+    --bids_folder /data/ds-neuralpriors --model_label 31 --smoothed
 
 # Cross-validation fit
 python neural_priors/encoding_model/fit_model_cv.py 01 \
-    --bids_folder /data/ds-neuralpriors --model 31 --smoothed
+    --bids_folder /data/ds-neuralpriors --model_label 31 --smoothed
 
 # Decode stimuli from brain activity
 python neural_priors/encoding_model/decode.py 01 \
     --bids_folder /data/ds-neuralpriors --model_label 31 --n_voxels 200
 
-# Extract parameters across subjects
+# Extract parameters across subjects (writes to derivatives/extracted_pars/)
 python neural_priors/encoding_model/extract_pars.py \
-    --bids_folder /data/ds-neuralpriors --model 31
+    --bids_folder /data/ds-neuralpriors --model_label 31 --smoothed
+
+# Write all parameters for main models into a single long-format summary TSV
+# (writes to derivatives/summary_tsvs/main_models_roi-NPCr_desc-groundtruth_parameters.tsv)
+python neural_priors/encoding_model/write_parameters_summary.py --smoothed
+
+# Run for a subset of models only
+python neural_priors/encoding_model/write_parameters_summary.py --smoothed --models 3,5
 ```
 
 ## SLURM Cluster Jobs
@@ -68,7 +75,7 @@ Common flags: `--smoothed`, `--fit_responses`, `--censored`, `--spherical_noise`
 All data access goes through `Subject(subject_id, bids_folder)`. Key methods:
 - `get_behavioral_data()` — trial-wise stimulus values and responses
 - `get_single_trial_estimates()` — GLMsingle fMRI single-trial amplitudes
-- `get_prf_parameters_volume(model_label)` — fitted encoding model parameters per voxel
+- `get_prf_parameters_volume(model_label, use_nifti=False)` — fitted encoding model parameters per voxel. By default reads from pre-extracted TSVs in `derivatives/extracted_pars/` (fast); pass `use_nifti=True` to load directly from NIfTI files. Run `extract_pars.py` first to populate the TSV cache.
 - `get_brain_mask()` / `get_volume_mask(roi)` — ROI masks (NPCr, NF, NTO regions)
 - `get_confounds()` — fMRIPrep motion/acquisition confounds
 
@@ -100,10 +107,38 @@ Use `get_model(model_label)` to instantiate the correct model class/configuratio
 
 Bayesian decoding: fits a residual noise model (Student's t), then computes the posterior PDF over stimulus values for held-out trials. Supports separate sigmas per condition and spherical vs. full covariance noise.
 
+Output PDF files have MultiIndex columns `(n, range)` where `n` is numerosity and `range` is 0.0 (narrow) or 1.0 (wide). Read with `pd.read_csv(..., header=[0,1], index_col=[0,1])`.
+
 ### Cross-Validation (`neural_priors/encoding_model/fit_model_cv.py`)
 
 Splits data by `(session, run2)` pairs into train/test folds. Returns cross-validated R² per voxel, used for model comparison and voxel selection in decoding.
 
+## Main Model Labels
+
+The canonical set of models used in analyses, with descriptive labels:
+
+| Label | Description |
+|-------|-------------|
+| 0  | No shift (μ_wide = μ_narrow) |
+| 1  | Fixed shift (δ=2, no range constraint) |
+| 2  | Fitted shift ratio, shared across voxels |
+| 3  | Fitted shift ratio, free per voxel |
+| 4  | Efficient coding: fixed shift (δ=2) |
+| 5  | Efficient coding: shared shift ratio |
+| 14 | Free width ratio, per voxel |
+| 15 | Fitted width scaling, shared across voxels |
+| 31 | Fixed width scaling (δ_σ=1.29) — primary production model |
+| 32 | Fixed width scaling + free amplitude ratio |
+| 33 | Fixed width scaling + shared amplitude ratio |
+| 34 | Fixed tuning, free amplitude per voxel |
+| 35 | Fixed tuning, shared amplitude ratio |
+
+"Shared" = one value per participant across all voxels. "Free" = per voxel. "Fixed" = constant.
+
 ## Output Structure
 
-Fitted parameters and results are written back into the BIDS derivatives tree under `derivatives/encoding_model/` as NIfTI volumes and TSV/CSV files, organized by subject, session, and model label.
+Fitted parameters and results are written into the BIDS derivatives tree:
+- `derivatives/encoding_model/model{N}.smoothed/sub-{id}/func/` — per-subject NIfTI parameter maps
+- `derivatives/extracted_pars/group_roi-{roi}_model-{N}_desc-{desc}_parameters.tsv` — pre-extracted per-model group TSVs (created by `extract_pars.py`)
+- `derivatives/summary_tsvs/main_models_roi-{roi}_desc-{desc}_parameters.tsv` — long-format table of all parameters for all main models (created by `write_parameters_summary.py`; columns: `subject`, `model_label`, `model`, `response_fit`, `voxel`, plus all parameter columns)
+- `derivatives/decoding2/model{N}.smoothed/sub-{id}/func/` — decoding PDF files
