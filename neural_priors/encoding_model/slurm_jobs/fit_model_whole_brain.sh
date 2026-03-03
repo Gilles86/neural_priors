@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=fit_nprf2_whole_brain
+#SBATCH --job-name=nprf_fit_wb
 #SBATCH --ntasks=1
 #SBATCH --time=15:00
 #SBATCH --cpus-per-task=16
 #SBATCH --gres=gpu:1
 #SBATCH --mem=32G  # Request more memory
-#SBATCH --output=/home/gdehol/logs/fit_nprf2_whole_brain_%A-%a.txt  # Default SLURM log
+#SBATCH --output=/dev/null
 
 # Load environment
 . $HOME/init_conda.sh
@@ -42,8 +42,9 @@ SUFFIX=""
 [[ -n "$FIT_RESPONSES_FLAG" ]] && SUFFIX="${SUFFIX}_fitresp"
 [[ -n "$CENSORED_FLAG" ]] && SUFFIX="${SUFFIX}_censored"
 
-# Define dynamic log file
-LOGFILE="/home/gdehol/logs/nprf2_fit_whole_brain_sub-${PARTICIPANT_LABEL}_model-${MODEL}${SUFFIX}.txt"
+# Define dynamic log file and update job name in squeue
+LOGFILE="/home/gdehol/logs/nprf_fit_wb_sub-${PARTICIPANT_LABEL}_model-${MODEL}${SUFFIX}.txt"
+scontrol update JobId=$SLURM_JOB_ID JobName="nprf_fit_wb_m${MODEL}_s${PARTICIPANT_LABEL}${SUFFIX}"
 
 # Run the encoding model fit and redirect output manually
 python $HOME/git/neural_priors/neural_priors/encoding_model/fit_model.py \
