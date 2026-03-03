@@ -337,7 +337,35 @@ class Subject(object):
 
 
     def get_prf_parameters_volume(self, model_label, smoothed=True, roi=None, response_fit=False, return_image=False,
-                                   raw=False, par_keys=None, censored=False):
+                                   raw=False, par_keys=None, censored=False, use_nifti=False):
+
+        # Fast path: read from pre-extracted group TSV if available and no custom par_keys requested
+        if par_keys is None and not use_nifti:
+            import warnings
+            desc = 'responses' if response_fit else 'groundtruth'
+            if censored:
+                desc += '.censored'
+            tsv_path = op.join(self.bids_folder, 'derivatives', 'extracted_pars',
+                               f'group_roi-{roi}_model-{model_label}_desc-{desc}_parameters.tsv')
+            if op.exists(tsv_path):
+                pars = pd.read_csv(tsv_path, sep='\t', header=[0, 1], index_col=[0, 1, 2, 3])
+                # Filter by subject_id (level 0); use string comparison to avoid dtype issues
+                mask = pars.index.get_level_values(0).astype(int) == int(self.subject_id)
+                pars = pars.loc[mask].droplevel([0, 1, 2])
+                pars.index = range(len(pars))
+                pars.columns.names = ['parameter', 'range']
+
+                if raw:
+                    from neural_priors.encoding_model.fit_model import conditionspecific_to_raw_pars
+                    pars = conditionspecific_to_raw_pars(model_label, pars)
+
+                if return_image:
+                    masker = self.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+                    return masker.inverse_transform(pars.T)
+
+                return pars
+            else:
+                raise FileNotFoundError(f'Pre-extracted TSV not found at {tsv_path}. Run extract_pars.py first, or pass use_nifti=True to load from NIfTI files directly.')
 
         if par_keys is None:
             par_keys = ['mu', 'sd', 'delta_wide', 'amplitude', 'baseline']

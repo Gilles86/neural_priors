@@ -67,6 +67,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
 
     stimulus_range = np.sort(paradigm['x'].unique())
     stimulus_range = np.stack([np.repeat(stimulus_range, 2), np.stack(np.tile([0, 1], len(stimulus_range)), axis=0)], axis=1)
+    stimulus_mi = pd.MultiIndex.from_arrays(stimulus_range.T, names=['n', 'range'])
 
     pdfs = []
 
@@ -184,7 +185,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
             pdf[test_narrow_ix, :] = pdf_narrow
             pdf[test_wide_ix, :] = pdf_wide
 
-            pdf = pd.DataFrame(pdf, index=test_data.index, columns=pdf_narrow.columns)
+            pdf = pd.DataFrame(pdf, index=test_data.index, columns=stimulus_mi)
             pdfs.append(pdf)
 
         else:
@@ -208,6 +209,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
                     dof=dof,
                     normalize=False)
 
+            pdf.columns = stimulus_mi
             print(pdf)
             pdfs.append(pdf)
 
