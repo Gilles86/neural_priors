@@ -45,6 +45,7 @@ from neural_priors.encoding_model.models import AlphaDeltaModel, LinearScalingMo
 # Model 33: Like model 31, but amplitude is allowed to vary, with subject-specific slope
 # Model 34: all parameters fixed except for amplitude
 # Model 35: all parameters fixed except for amplitude, same ratio across voxels
+# Model 36: like model 35 but only a shared scaling factor (amplitude_alpha fixed at 0, no intercept)
 
 
 # Model 115 - model 145, these are all versions of model 31, buth the slope is changed between 1.15 and 1.45
@@ -66,6 +67,7 @@ N_PARAMETERS = {
     33: 6,   # mu, baseline, sd_narrow, amp_narrow + shared amp_beta + sigma
     34: 7,   # mu, lb, baseline, sd, amp_narrow, amp_beta + sigma
     35: 8,   # mu, lb, baseline, sd, amp_narrow + shared amp_alpha, amp_beta + sigma
+    36: 7,   # mu, lb, baseline, sd, amp_narrow + shared amp_beta + sigma
 }
 
 def get_model(model_label):
@@ -98,7 +100,7 @@ def get_model(model_label):
         model = LinearScalingModel(separate_amplitudes=False, identity_below_range=True, separate_sds=True, sigma_fwhm=True)
     elif model_label in [32, 33]:
         model = LinearScalingModel(separate_amplitudes=True, identity_below_range=True, separate_sds=True)
-    elif model_label in [34, 35]:
+    elif model_label in [34, 35, 36]:
         model = LinearScalingModel(separate_amplitudes=True, identity_below_range=True, separate_sds=False, rescale_baseline=False)
     else:
         model = AlphaDeltaModel()
@@ -183,7 +185,7 @@ def get_grid(model_label):
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes
         elif model_label in [32, 33]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'sd_wide_scale', 'amplitude_narrow', 'amplitude_alpha', 'amplitude_beta', 'baseline_ratio']
             return modes, delta_wides, intersection_point, baselines, sds, sd_scales, amplitudes, amplitudes_alpha, amplitudes_beta
-        elif model_label in [34, 35]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'amplitude']
+        elif model_label in [34, 35, 36]: # ['mu_narrow', 'delta_wide', 'lower_bound_range', 'baseline', 'sd_narrow', 'amplitude']
             return modes, delta_wides, intersection_point, baselines, sds, amplitudes, amplitudes_alpha, amplitudes_beta
 
         
@@ -260,6 +262,10 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_b
     if model_label in [35]:
         shared_pars = ['amplitude_alpha', 'amplitude_beta']
         fixed_pars = ['delta_wide']
+
+    if model_label in [36]:
+        shared_pars = ['amplitude_beta']
+        fixed_pars = ['delta_wide', 'amplitude_alpha']
 
     gd_pars = fitter.fit(max_n_iterations=max_n_iterations, init_pars=grid_pars,
                          shared_pars=shared_pars, fixed_pars=fixed_pars)
@@ -397,8 +403,8 @@ def conditionspecific_to_raw_pars(model_label, pars_cs):
             raw['amplitude_alpha'] = intercept
             raw['amplitude_beta']  = slope
 
-        elif model_label in [32, 34]:
-            # amplitude_alpha = 0 fixed; amplitude_beta = wide / narrow (per voxel)
+        elif model_label in [32, 34, 36]:
+            # amplitude_alpha = 0 fixed; amplitude_beta = wide / narrow (per voxel for 32/34, shared for 36)
             raw['baseline']         = pars_cs[('baseline', 'narrow')]
             raw['amplitude_narrow'] = pars_cs[('amplitude', 'narrow')]
             raw['amplitude_alpha']  = 0.
@@ -474,7 +480,7 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
 
             par_labels += ['baseline_ratio']
 
-        elif model_label in [21, 22, 23, 24, 32, 33, 34, 35]:
+        elif model_label in [21, 22, 23, 24, 32, 33, 34, 35, 36]:
             pars[('amplitude', 'narrow')] = estimated_parameters['amplitude_narrow']
             pars[('amplitude', 'wide')] = estimated_parameters['amplitude_alpha'] + estimated_parameters['amplitude_beta'] * estimated_parameters['amplitude_narrow']
 
