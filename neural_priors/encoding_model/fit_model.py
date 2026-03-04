@@ -62,6 +62,7 @@ N_PARAMETERS = {
     5:  6,   # + shared delta_wide
     14: 6,   # mu, sd_narrow, sd_wide, amp, baseline + sigma
     15: 6,   # mu, baseline, sd_narrow, amp + shared sd_wide_scale + sigma
+    18: 7,   # mu, baseline, sd_narrow, amp + shared delta_wide, sd_wide_scale + sigma
     31: 5,   # mu, baseline, sd_narrow, amp + sigma  (delta_wide, sd_wide_scale fixed)
     32: 6,   # mu, baseline, sd_narrow, amp_narrow, amp_beta + sigma
     33: 6,   # mu, baseline, sd_narrow, amp_narrow + shared amp_beta + sigma
