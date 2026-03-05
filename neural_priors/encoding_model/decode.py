@@ -115,7 +115,7 @@ def get_decoding_paradigm(sub, fit_responses=False, drop_levels=True):
     return paradigm
 
 def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors', smoothed=True, debug=False, fit_responses=False,
-         n_voxels=100, spherical_noise=False, separate_sigmas=False, subtract_wt_baseline=False):
+         n_voxels=100, spherical_noise=False, separate_sigmas=False, subtract_wt_baseline=False, lambd=0.0):
     """
     Run leave-one-run-out Bayesian decoding for one subject.
 
@@ -173,6 +173,9 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
 
     if subtract_wt_baseline:
         key += '.subtract_wt_baseline'
+
+    if lambd > 0.0:
+        key += f'.lambd-{lambd}'
 
     target_dir = bids_folder / 'derivatives' / 'decoding2' / key / f'sub-{subject}' / 'func'
 
@@ -283,7 +286,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
             model.init_pseudoWWT(stimulus_range_narrow, gd_pars, subtract_baseline=subtract_wt_baseline)
 
             residfit_narrow = ResidualFitter(model, train_data_narrow,
-                                            train_paradigm_narrow, parameters=gd_pars,)
+                                            train_paradigm_narrow, parameters=gd_pars, lambd=lambd)
             omega_narrow, dof_narrow = residfit_narrow.fit(init_sigma2=0.1,
                     init_dof=10.0,
                     method='t',
@@ -302,7 +305,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
             # Get pdf for wide condition
             model.init_pseudoWWT(stimulus_range_wide, gd_pars, subtract_baseline=subtract_wt_baseline)
             residfit_wide = ResidualFitter(model, train_data_wide,
-                                            train_paradigm_wide, parameters=gd_pars,)
+                                            train_paradigm_wide, parameters=gd_pars, lambd=lambd)
             omega_wide, dof_wide = residfit_wide.fit(init_sigma2=0.1,
                     init_dof=10.0,
                     method='t',
@@ -336,7 +339,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
             model.init_pseudoWWT(stimulus_range, gd_pars, subtract_baseline=subtract_wt_baseline)
 
             residfit = ResidualFitter(model, train_data,
-                                        train_paradigm, parameters=gd_pars,)
+                                        train_paradigm, parameters=gd_pars, lambd=lambd)
 
             omega, dof = residfit.fit(init_sigma2=0.1,
                     init_dof=10.0,
@@ -384,6 +387,8 @@ if __name__ == '__main__':
     parser.add_argument('--spherical_noise', action='store_true')
     parser.add_argument('--subtract_wt_baseline', action='store_true',
                         help='Subtract per-voxel baseline from basis predictions before computing WWT')
+    parser.add_argument('--lambd', type=float, default=0.0,
+                        help='Blend weight for empirical sample covariance (0=parametric only, 1=empirical only)')
     args = parser.parse_args()
 
-    main(subject=args.subject, model_label=args.model_label, bids_folder=args.bids_folder, smoothed=args.smoothed, debug=args.debug, fit_responses=args.fit_responses, n_voxels=args.n_voxels, spherical_noise=args.spherical_noise, separate_sigmas=args.separate_sigmas, subtract_wt_baseline=args.subtract_wt_baseline)
+    main(subject=args.subject, model_label=args.model_label, bids_folder=args.bids_folder, smoothed=args.smoothed, debug=args.debug, fit_responses=args.fit_responses, n_voxels=args.n_voxels, spherical_noise=args.spherical_noise, separate_sigmas=args.separate_sigmas, subtract_wt_baseline=args.subtract_wt_baseline, lambd=args.lambd)
