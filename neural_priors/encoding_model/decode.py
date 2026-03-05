@@ -1,3 +1,47 @@
+"""
+Bayesian decoding of numerosity from single-trial fMRI amplitudes.
+
+Overview
+--------
+For each subject, this script implements leave-one-run-out cross-validation
+(folded by the run2 index, which groups original runs 1+5, 2+6, 3+7, 4+8).
+In each fold:
+
+  1. Fit encoding model on the training set (grid search + gradient descent).
+  2. Select the best n_voxels by training-set R² (or by cross-validated R²
+     when n_voxels=0).
+  3. Fit a multivariate Student-t residual noise model (ResidualFitter) on the
+     training set.  This yields a noise covariance matrix omega and degrees of
+     freedom dof.
+  4. For each test trial, evaluate the likelihood P(data | n, range) over the
+     full grid of possible stimuli (all numerosities × {narrow, wide}) using
+     the fitted encoding model and noise model.  This unnormalised likelihood
+     is the posterior PDF over stimulus identity (assuming a flat prior).
+
+Output
+------
+One TSV per subject written to
+  derivatives/decoding2/model{N}.smoothed[.flags]/sub-{id}/func/
+  sub-{id}_mask-{roi}_nvoxels-{n}_pars.tsv
+
+Rows: one per test trial across all folds.
+Row index (5 levels): session, run, trial_nr, x (true numerosity), range
+  (0.0=narrow, 1.0=wide).  Sorted to original presentation order in the
+  analysis notebook via sort_index(level=['session','run','trial_nr']).
+Columns: MultiIndex (n, range_condition) over the decoded stimulus grid,
+  where the first header row is the numerosity value and the second is
+  '0.0' (narrow) or '1.0' (wide).
+
+Key flags
+---------
+--n_voxels 0        Select voxels by cross-validated R² > 0 (all positive).
+--n_voxels N        Select the top N voxels by training-set R².
+--spherical_noise   Fit isotropic (scalar) noise rather than full covariance.
+--separate_sigmas   Fit separate noise models for narrow and wide conditions.
+--fit_responses     Use behavioural responses as the decoded variable instead
+                    of the true presented numerosity.
+"""
+
 import argparse
 from neural_priors.utils.data import Subject
 from fit_model import get_paradigm, get_model, fit_model, fit_model_cv
@@ -14,6 +58,51 @@ from braincoder.optimize import ResidualFitter
 import pingouin as pg
 
 def get_decoding_paradigm(sub, fit_responses=False, drop_levels=True):
+    """
+    Return the stimulus paradigm DataFrame with a 'run2' cross-validation index.
+
+    Why run2 exists — the folding logic
+    ------------------------------------
+    Each session has 8 runs.  Each run is entirely narrow OR entirely wide
+    (determined by the stimulus range).  Crucially, the design is arranged so
+    that run k and run k+4 are *opposite* conditions within the same session:
+    if run 1 is narrow, run 5 is wide; if run 2 is wide, run 6 is narrow; etc.
+
+    We want each cross-validation fold to contain *both* narrow and wide trials,
+    for two reasons:
+      - The residual noise model must see both conditions during training.
+      - The test set should contain both so we can evaluate decoding for each.
+
+    The solution: group runs into 4 folds by pairing each run with its
+    complement 4 runs later:
+
+        run2 = (run - 1) % 4 + 1
+
+        original run  →  run2 (fold)
+        ─────────────────────────────
+        1             →  1   (narrow)  ┐ fold 1 test set:
+        5             →  1   (wide)    ┘ one narrow + one wide run
+        2             →  2   (wide)    ┐ fold 2 test set:
+        6             →  2   (narrow)  ┘ one narrow + one wide run
+        3             →  3   (narrow)  ┐ fold 3 test set:
+        7             →  3   (wide)    ┘ ...
+        4             →  4   (wide)    ┐ fold 4 test set:
+        8             →  4   (narrow)  ┘ ...
+
+    The cross-validation loop iterates over (session, run2) pairs.  For each
+    fold, the test set is data.loc[(session, run2)], which selects both original
+    runs (e.g. runs 1 and 5 for fold 1), giving a balanced narrow+wide test set.
+    Everything else is the training set.
+
+    Parameters
+    ----------
+    drop_levels : bool
+        True (default): drop run, trial_nr, subject from the index, leaving
+        only [session, run2].  Used for the data DataFrame during fitting.
+        False: keep all levels [subject, session, run2, trial_nr, run].  Used
+        to tag saved PDF rows with their original presentation identity so the
+        output file can be sorted back to (session, run, trial_nr) order.
+    """
         # Get paradigm/data/model
     paradigm = get_paradigm(sub, fit_responses=fit_responses)
     paradigm = paradigm.set_index(pd.Index((paradigm.index.get_level_values('run') - 1) % 4 + 1, name='run2'), append=True)
@@ -27,7 +116,38 @@ def get_decoding_paradigm(sub, fit_responses=False, drop_levels=True):
 
 def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors', smoothed=True, debug=False, fit_responses=False,
          n_voxels=100, spherical_noise=False, separate_sigmas=False):
+    """
+    Run leave-one-run-out Bayesian decoding for one subject.
 
+    Cross-validation folds are defined by run2 (see get_decoding_paradigm).
+    For each fold the encoding model is re-fit from scratch on the training
+    runs, a Student-t noise model is estimated, and P(data | stimulus) is
+    evaluated over the full (numerosity x range) grid for every test trial.
+
+    Parameters
+    ----------
+    subject : str
+        Zero-padded subject ID, e.g. '01'.
+    model_label : int
+        Encoding model variant.  Only 15, 18, and 31 support decoding.
+    roi : str
+        ROI label passed to Subject.get_volume_mask() (e.g. 'NPCr').
+    bids_folder : str
+        Root of the BIDS dataset.
+    smoothed : bool
+        Use spatially smoothed single-trial estimates.
+    debug : bool
+        Cap iterations at 100 for quick testing.
+    fit_responses : bool
+        Decode behavioural responses rather than true numerosities.
+    n_voxels : int
+        Number of voxels to use (ranked by training R²).
+        0 = use all voxels with cross-validated R² > 0.
+    spherical_noise : bool
+        Constrain the noise covariance to be isotropic (scalar sigma²·I).
+    separate_sigmas : bool
+        Fit independent noise models for narrow and wide conditions.
+    """
     assert model_label in [15, 18, 31], 'Only models 15, 18, and 31 are supported for decoding'
 
 
@@ -67,12 +187,19 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
 
     # all_cvr2 = []
 
+    # Build the stimulus grid: every (numerosity, range_condition) combination.
+    # Result shape: (2 * n_unique_stimuli, 2), alternating narrow/wide per numerosity:
+    #   [(n1, 0), (n1, 1), (n2, 0), (n2, 1), ...]
+    # This is passed to init_pseudoWWT and get_stimulus_pdf so the decoder
+    # evaluates P(data | n, range) jointly over both conditions.
     stimulus_range = np.sort(paradigm['x'].unique())
     stimulus_range = np.stack([np.repeat(stimulus_range, 2), np.stack(np.tile([0, 1], len(stimulus_range)), axis=0)], axis=1)
     stimulus_mi = pd.MultiIndex.from_arrays(stimulus_range.T, names=['n', 'range'])
 
     pdfs = []
 
+    # Each fold holds out one run2 group (= 2 original runs, one per session)
+    # as the test set; all remaining runs form the training set.
     for (test_session, test_run), _ in paradigm.groupby(level=['session', 'run2']):
 
         print(f'Fitting using session {test_session} run {test_run} as test set')
