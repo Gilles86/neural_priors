@@ -147,7 +147,7 @@ def get_grid(model_label):
     amplitudes = np.array([1.], dtype=np.float32)
     baselines = np.array([0], dtype=np.float32)
 
-    if model_label in [0, 34, 35]:
+    if model_label in [0, 34, 35, 36]:
         delta_wides = [1.0]
     elif (model_label in [1, 4, 7, 12, 13, 14, 15, 16, 17, 21, 22, 25, 26, 27, 28, 29, 30, 31, 32, 33]) or (model_label > 100):
         delta_wides = [2.0]
