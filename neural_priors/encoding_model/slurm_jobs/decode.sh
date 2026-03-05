@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=decode_neural_priors
 #SBATCH --ntasks=1
-#SBATCH --time=300:00
+#SBATCH --time=90:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=32G  # Request more memory
 #SBATCH --output=/home/gdehol/logs/decode_neural_priors_%A-%a.txt  # Default SLURM log
