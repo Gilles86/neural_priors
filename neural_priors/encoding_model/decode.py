@@ -115,7 +115,7 @@ def get_decoding_paradigm(sub, fit_responses=False, drop_levels=True):
     return paradigm
 
 def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors', smoothed=True, debug=False, fit_responses=False,
-         n_voxels=100, spherical_noise=False, separate_sigmas=False):
+         n_voxels=100, spherical_noise=False, separate_sigmas=False, subtract_wt_baseline=False):
     """
     Run leave-one-run-out Bayesian decoding for one subject.
 
@@ -170,6 +170,9 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
 
     if separate_sigmas:
         key += '.separate_sigmas'
+
+    if subtract_wt_baseline:
+        key += '.subtract_wt_baseline'
 
     target_dir = bids_folder / 'derivatives' / 'decoding2' / key / f'sub-{subject}' / 'func'
 
@@ -277,7 +280,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
             stimulus_range_wide = stimulus_range[1::2]    # rows where range==1
 
             # Get pdf for narrow condition
-            model.init_pseudoWWT(stimulus_range_narrow, gd_pars)
+            model.init_pseudoWWT(stimulus_range_narrow, gd_pars, subtract_baseline=subtract_wt_baseline)
 
             residfit_narrow = ResidualFitter(model, train_data_narrow,
                                             train_paradigm_narrow, parameters=gd_pars,)
@@ -297,7 +300,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
             
 
             # Get pdf for wide condition
-            model.init_pseudoWWT(stimulus_range_wide, gd_pars)
+            model.init_pseudoWWT(stimulus_range_wide, gd_pars, subtract_baseline=subtract_wt_baseline)
             residfit_wide = ResidualFitter(model, train_data_wide,
                                             train_paradigm_wide, parameters=gd_pars,)
             omega_wide, dof_wide = residfit_wide.fit(init_sigma2=0.1,
@@ -330,7 +333,7 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
             pdfs.append(pdf)
 
         else:
-            model.init_pseudoWWT(stimulus_range, gd_pars)
+            model.init_pseudoWWT(stimulus_range, gd_pars, subtract_baseline=subtract_wt_baseline)
 
             residfit = ResidualFitter(model, train_data,
                                         train_paradigm, parameters=gd_pars,)
@@ -379,6 +382,8 @@ if __name__ == '__main__':
                         help='Whether to fit separate sigmas for narrow and wide conditions')
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--spherical_noise', action='store_true')
+    parser.add_argument('--subtract_wt_baseline', action='store_true',
+                        help='Subtract per-voxel baseline from basis predictions before computing WWT')
     args = parser.parse_args()
 
-    main(subject=args.subject, model_label=args.model_label, bids_folder=args.bids_folder, smoothed=args.smoothed, debug=args.debug, fit_responses=args.fit_responses, n_voxels=args.n_voxels, spherical_noise=args.spherical_noise, separate_sigmas=args.separate_sigmas)
+    main(subject=args.subject, model_label=args.model_label, bids_folder=args.bids_folder, smoothed=args.smoothed, debug=args.debug, fit_responses=args.fit_responses, n_voxels=args.n_voxels, spherical_noise=args.spherical_noise, separate_sigmas=args.separate_sigmas, subtract_wt_baseline=args.subtract_wt_baseline)

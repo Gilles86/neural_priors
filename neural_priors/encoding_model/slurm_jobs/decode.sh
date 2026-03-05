@@ -18,6 +18,7 @@ SMOOTHED_FLAG=""
 FIT_RESPONSES_FLAG=""
 SPHERICAL_FLAG=""
 SEPARATE_SIGMAS_FLAG=""
+SUBTRACT_WT_BASELINE_FLAG=""
 
 # Parse script arguments
 for arg in "$@"; do
@@ -34,6 +35,9 @@ for arg in "$@"; do
         --separate_sigmas)
             SEPARATE_SIGMAS_FLAG="--separate_sigmas"
             ;;
+        --subtract_wt_baseline)
+            SUBTRACT_WT_BASELINE_FLAG="--subtract_wt_baseline"
+            ;;
         --*)
             echo "Warning: Unknown argument '$arg' will be ignored."
             ;;
@@ -46,6 +50,7 @@ SUFFIX=""
 [[ -n "$FIT_RESPONSES_FLAG" ]] && SUFFIX="${SUFFIX}_fitresp"
 [[ -n "$SPHERICAL_FLAG" ]] && SUFFIX="${SUFFIX}_spherical"
 [[ -n "$SEPARATE_SIGMAS_FLAG" ]] && SUFFIX="${SUFFIX}_separate_sigmas"
+[[ -n "$SUBTRACT_WT_BASELINE_FLAG" ]] && SUFFIX="${SUFFIX}_subtract_wt_baseline"
 
 # Define dynamic log file
 LOGFILE="/home/gdehol/logs/nprf2_decode_sub-${PARTICIPANT_LABEL}_model-${MODEL}${SUFFIX}.txt"
@@ -54,4 +59,4 @@ LOGFILE="/home/gdehol/logs/nprf2_decode_sub-${PARTICIPANT_LABEL}_model-${MODEL}$
 python $HOME/git/neural_priors/neural_priors/encoding_model/decode.py \
     $PARTICIPANT_LABEL --bids_folder /shares/zne.uzh/gdehol/ds-neuralpriors \
     --n_voxels $N_VOXELS \
-    $SMOOTHED_FLAG $FIT_RESPONSES_FLAG $SPHERICAL_FLAG $SEPARATE_SIGMAS_FLAG --model_label $MODEL > "$LOGFILE" 2>&1
+    $SMOOTHED_FLAG $FIT_RESPONSES_FLAG $SPHERICAL_FLAG $SEPARATE_SIGMAS_FLAG $SUBTRACT_WT_BASELINE_FLAG --model_label $MODEL > "$LOGFILE" 2>&1
