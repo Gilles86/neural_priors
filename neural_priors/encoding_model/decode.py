@@ -28,7 +28,7 @@ def get_decoding_paradigm(sub, fit_responses=False, drop_levels=True):
 def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors', smoothed=True, debug=False, fit_responses=False,
          n_voxels=100, spherical_noise=False, separate_sigmas=False):
 
-    assert model_label in [15, 18, 31], 'Only model 15 and 18 are supported for decoding'
+    assert model_label in [15, 18, 31], 'Only models 15, 18, and 31 are supported for decoding'
 
 
     sub = Subject(subject_id=subject, bids_folder=bids_folder)
@@ -58,6 +58,8 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
 
     # Get paradigm/data/model
     paradigm = get_decoding_paradigm(sub, fit_responses=fit_responses)
+    # Full paradigm keeps run/trial_nr so we can tag each PDF row with its original identity
+    paradigm_full = get_decoding_paradigm(sub, fit_responses=fit_responses, drop_levels=False)
 
     data = sub.get_single_trial_estimates(session=None, smoothed=smoothed)
     masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
@@ -77,6 +79,11 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
 
         test_data, test_paradigm = data.loc[(test_session, test_run)].copy().astype(np.float32), paradigm.loc[(test_session, test_run)].copy().astype(np.float32)
         train_data, train_paradigm = data.drop((test_session, test_run)).copy(), paradigm.drop((test_session, test_run)).copy()
+
+        # Get original run/trial_nr for this fold so we can save a sortable index
+        fold_mask = ((paradigm_full.index.get_level_values('session') == test_session) &
+                     (paradigm_full.index.get_level_values('run2') == test_run))
+        test_paradigm_full = paradigm_full[fold_mask]
 
         print(test_paradigm)
 
@@ -139,11 +146,11 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
             test_data_wide = test_data[test_wide_ix]
 
 
-            stimulus_range_narow = stimulus_range[:len(stimulus_range) // 2]
-            stimulus_range_wide = stimulus_range[len(stimulus_range) // 2:]
+            stimulus_range_narrow = stimulus_range[::2]   # rows where range==0
+            stimulus_range_wide = stimulus_range[1::2]    # rows where range==1
 
             # Get pdf for narrow condition
-            model.init_pseudoWWT(stimulus_range_narow, gd_pars)
+            model.init_pseudoWWT(stimulus_range_narrow, gd_pars)
 
             residfit_narrow = ResidualFitter(model, train_data_narrow,
                                             train_paradigm_narrow, parameters=gd_pars,)
@@ -186,6 +193,13 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
             pdf[test_wide_ix, :] = pdf_wide
 
             pdf = pd.DataFrame(pdf, index=test_data.index, columns=stimulus_mi)
+            pdf.index = pd.MultiIndex.from_arrays([
+                test_paradigm_full.index.get_level_values('session'),
+                test_paradigm_full.index.get_level_values('run'),
+                test_paradigm_full.index.get_level_values('trial_nr'),
+                test_paradigm['x'].values,
+                test_paradigm['range'].values,
+            ], names=['session', 'run', 'trial_nr', 'x', 'range'])
             pdfs.append(pdf)
 
         else:
@@ -210,6 +224,13 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
                     normalize=False)
 
             pdf.columns = stimulus_mi
+            pdf.index = pd.MultiIndex.from_arrays([
+                test_paradigm_full.index.get_level_values('session'),
+                test_paradigm_full.index.get_level_values('run'),
+                test_paradigm_full.index.get_level_values('trial_nr'),
+                test_paradigm['x'].values,
+                test_paradigm['range'].values,
+            ], names=['session', 'run', 'trial_nr', 'x', 'range'])
             print(pdf)
             pdfs.append(pdf)
 
