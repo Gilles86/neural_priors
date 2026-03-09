@@ -182,6 +182,17 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
     if not op.exists(target_dir):
         os.makedirs(target_dir)
 
+    # Canonical directory for cached per-fold cvr2 results.
+    # Only model_label, smoothed, and fit_responses affect the encoding model
+    # fit and therefore the cvr2 — noise settings (lambd, spherical_noise, etc.)
+    # do not.  We cache here so different decoding runs can reuse the same cvr2.
+    cvr2_key = f'model{model_label}'
+    if smoothed:
+        cvr2_key += '.smoothed'
+    if fit_responses:
+        cvr2_key += '.fit_responses'
+    cvr2_cache_dir = bids_folder / 'derivatives' / 'decoding2' / cvr2_key / f'sub-{subject}' / 'func'
+
     # Get paradigm/data/model
     paradigm = get_decoding_paradigm(sub, fit_responses=fit_responses)
     # Full paradigm keeps run/trial_nr so we can tag each PDF row with its original identity
@@ -226,14 +237,19 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
         # Cross-validate to get number of (and which) voxels
         if n_voxels == 0:
 
-            print('Cross-validating to get number of voxels')
+            cvr2_fn = cvr2_cache_dir / f'sub-{subject}_ses-{test_session}_run2-{test_run}_mask-{roi}_desc-cvr2_pars.tsv'
 
-            cvr2 = fit_model_cv(train_data, train_paradigm, model_label, max_n_iterations=max_n_iterations)
+            if cvr2_fn.exists():
+                print(f'Loading cached cvr2 from {cvr2_fn}')
+                cvr2 = pd.read_csv(cvr2_fn, sep='\t', index_col=0).squeeze('columns')
+            else:
+                print('Cross-validating to get number of voxels')
+                cvr2 = fit_model_cv(train_data, train_paradigm, model_label, max_n_iterations=max_n_iterations)
+                cvr2_cache_dir.mkdir(parents=True, exist_ok=True)
+                cvr2.to_csv(cvr2_fn, sep='\t')
+
             print(cvr2)
             r2_mask = cvr2 > 0.0
-
-            target_fn = op.join(target_dir, f'sub-{subject}_ses-{test_session}_run2-{test_run}_mask-{roi}_desc-cvr2_pars.tsv')
-            cvr2.to_csv(target_fn, sep='\t')
 
             print(f'Selecting {np.sum(r2_mask)} voxels with cvr2 > 0.0')
 
