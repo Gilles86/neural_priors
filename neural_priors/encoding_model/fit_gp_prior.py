@@ -186,12 +186,19 @@ def fit_fold_classical(model, train_data, train_par, init_pars,
     return pars, float(fitter.r2.mean())
 
 
-def _build_priors(distance_matrix, classical_pars, lengthscale_init=5.0):
-    """One GP prior per regularized parameter; variance seeded from classical."""
+def _build_priors(distance_matrix, classical_pars):
+    """One GP prior per regularized parameter; variance seeded from classical.
+
+    Initial lengthscale defaults to ~25% of the median pairwise distance
+    so the kernel is non-degenerate from step 0 (cf. ‘RBF with l << d
+    looks like a delta function’). Adam will adjust it during stage 2.
+    """
+    offdiag = distance_matrix[~np.eye(distance_matrix.shape[0], dtype=bool)]
+    lengthscale_init = max(float(np.median(offdiag)) * 0.25, 1.0)
     priors = {}
     for name in PRIOR_PARAMS:
         v = float(np.var(classical_pars[name].values))
-        v_init = max(v, 1e-4)               # avoid zero-variance init
+        v_init = max(v, 1e-4)
         nugget_init = max(v_init * 0.1, 1e-4)
         priors[name] = GeodesicGPPrior(
             distance_matrix,
