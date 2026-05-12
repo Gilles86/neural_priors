@@ -22,7 +22,7 @@ exec > "$LOGFILE" 2>&1
 
 # Direct path to env binary — avoids `conda run` buffering, no module load.
 export PYTHONUNBUFFERED=1
-PYTHON=$HOME/data/conda/envs/neural_priors2/bin/python
+PYTHON=$HOME/data/conda/envs/neural_priors3/bin/python
 
 $PYTHON -u $HOME/git/neural_priors/neural_priors/encoding_model/fit_gp_prior.py \
     $PARTICIPANT_LABEL \

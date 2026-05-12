@@ -143,9 +143,9 @@ def load_data(subject, bids_folder, roi='NPCr', stim_range='wide'):
     paradigm_full = get_paradigm(sub, fit_responses=False)
     # 'range' was mapped {narrow: False, wide: True} in get_paradigm.
     if stim_range == 'wide':
-        keep = paradigm_full['range'] == 1.0
+        keep = np.asarray(paradigm_full['range'] == 1.0)
     elif stim_range == 'narrow':
-        keep = paradigm_full['range'] == 0.0
+        keep = np.asarray(paradigm_full['range'] == 0.0)
     elif stim_range == 'both':
         keep = np.ones(len(paradigm_full), dtype=bool)
     else:
@@ -166,8 +166,8 @@ def load_data(subject, bids_folder, roi='NPCr', stim_range='wide'):
     data_img = sub.get_single_trial_estimates(session=None, smoothed=False)
     data_2d = masker.fit_transform(data_img).astype(np.float32)
     data_full = pd.DataFrame(data_2d, index=get_paradigm(sub).index)
-    # Align by (subject, session, run, trial_nr) before dropping levels.
-    data = data_full.loc[keep.values].copy()
+    # Subset to the same trials we kept; reindex to paradigm's CV index.
+    data = data_full.iloc[keep].copy()
     data.index = paradigm.index
     data.columns.name = 'voxel'
 
