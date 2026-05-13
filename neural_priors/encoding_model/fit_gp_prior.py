@@ -260,45 +260,54 @@ def _fdr_significant_voxels(train_data, train_pred, n_model_params, q=0.05):
     return np.sort(order[:cutoff + 1])
 
 
-def _decode_test_trials(model, params, train_resid, test_data, sig_voxels,
-                         stim_grid):
-    """Posterior-mean decode each test trial under an independent-voxel
-    Gaussian likelihood with a uniform prior over ``stim_grid``.
+def _decode_test_trials(params, train_data, train_par, test_data,
+                         sig_voxels, stim_grid, max_resid_iter=2000):
+    """Posterior-mean decode test trials using braincoder's standard
+    Student-t residual noise model + ``get_stimulus_pdf``.
 
-    The readout is ``E[s | data] = Σ_s p(s | data) · s`` where
-    ``p(s | data) ∝ exp(log_lik(s))``. Better than argmax for
-    population-code decoding: integrates information across the whole
-    likelihood landscape, not just its peak, and degrades gracefully
-    when the likelihood is wide or bimodal.
+    Pipeline (matches ``neural_priors/encoding_model/decode.py`` and
+    ``tms_risk/encoding_model/decode_select_voxels_cv.py``):
 
-    Returns ``None`` if no voxels pass FDR — caller should skip metrics.
+      1. Build a fresh ``LogGaussianPRF`` on the FDR-significant voxels
+         with the method's fitted parameters baked in.
+      2. ``init_pseudoWWT(stim_grid, params)`` precomputes the
+         basis-weight matrix the residual fitter needs.
+      3. ``ResidualFitter`` fits a multivariate Student-t noise model
+         (full covariance ``omega`` and degrees of freedom ``dof``)
+         on the training residuals.
+      4. ``get_stimulus_pdf`` evaluates the un-normalized posterior over
+         the numerosity grid for each test trial.
+      5. Readout = posterior mean over ``stim_grid``.
+
+    Returns ``None`` if no voxels pass FDR.
     """
     if len(sig_voxels) == 0:
         return None
 
+    from braincoder.models import LogGaussianPRF
+    from braincoder.optimize import ResidualFitter
+
     sig_voxels = np.asarray(sig_voxels, dtype=int)
-    sigma = np.std(np.asarray(train_resid)[:, sig_voxels], axis=0)
-    sigma = np.maximum(sigma, 1e-3).astype(np.float64)
-
     sig_params = params.iloc[sig_voxels]
-    grid_par = pd.DataFrame({'x': stim_grid.astype(np.float32)})
-    grid_pred = np.asarray(
-        model.predict(parameters=sig_params, paradigm=grid_par).values,
-        dtype=np.float64)                                        # (n_grid, n_sig)
-    test = np.asarray(test_data.iloc[:, sig_voxels].values,
-                       dtype=np.float64)                          # (n_test, n_sig)
+    train_data_sig = train_data.iloc[:, sig_voxels].astype(np.float32)
+    test_data_sig = test_data.iloc[:, sig_voxels].astype(np.float32)
 
-    # ll[t, s] = -0.5 * Σᵥ ((test[t,v] - grid_pred[s,v]) / σᵥ)²
-    diff = (test[:, None, :] - grid_pred[None, :, :]) / sigma[None, None, :]
-    log_lik = -0.5 * np.sum(diff ** 2, axis=-1)                  # (n_test, n_grid)
+    m = LogGaussianPRF(paradigm=train_par.to_frame(), parameters=sig_params)
+    m.init_pseudoWWT(stim_grid, sig_params)
 
-    # Normalize to posterior via log-sum-exp; trapezoidal weighting on
-    # the stim grid would be more faithful for non-uniform grids — for a
-    # uniform grid it just renormalises and doesn't change the mean.
-    log_lik -= log_lik.max(axis=1, keepdims=True)
-    posterior = np.exp(log_lik)
-    posterior /= posterior.sum(axis=1, keepdims=True)
-    return posterior @ stim_grid
+    residfit = ResidualFitter(m, train_data_sig, train_par,
+                               parameters=sig_params)
+    omega, dof = residfit.fit(
+        init_sigma2=0.1, method='t',
+        max_n_iterations=max_resid_iter, learning_rate=0.05,
+        progressbar=False)
+
+    pdf = m.get_stimulus_pdf(test_data_sig, stim_grid, sig_params,
+                              omega=omega, dof=dof)
+    # pdf columns are the stimulus grid values (floats)
+    cols = pdf.columns.astype(float).values
+    decoded = (pdf.values * cols[None, :]).sum(axis=1) / pdf.values.sum(axis=1)
+    return decoded.astype(np.float32)
 
 
 def fit_fold_bayes_no_prior(model, train_data, train_par, init_pars,
@@ -388,15 +397,16 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
             dtype=np.float32)
         true_test = test_par.values.astype(np.float32)
         decoding = {}
+        decode_iter = 200 if debug else 2000
         for method, train_pred_df, fit_pars in (
                 ('classical', cls_train_pred, cls_pars),
                 ('ml',        ml_train_pred,  ml_pars),
                 ('bayes',     map_train_pred, map_pars)):
             sig = _fdr_significant_voxels(
                 train_data.values, train_pred_df.values, n_model_params)
-            train_resid = train_data.values - train_pred_df.values
             decoded = _decode_test_trials(
-                model, fit_pars, train_resid, test_data, sig, stim_grid)
+                fit_pars, train_data, train_par, test_data,
+                sig, stim_grid, max_resid_iter=decode_iter)
             if decoded is None:
                 decoding[method] = dict(n_sig=0, mae=np.nan,
                                          median_ae=np.nan, decoded=None)
