@@ -224,40 +224,155 @@ def fit_fold_bayes(model, train_data, train_par, distance_matrix,
             fitter.map_sigma)
 
 
-def _fdr_significant_voxels(train_data, train_pred, n_model_params, q=0.05):
-    """Voxels with BH-FDR-corrected p < q from an F-test on training R².
+def _moment_match_beta(weights, x):
+    w_sum = weights.sum()
+    if w_sum < 1e-9:
+        return 1.0, 1.0
+    mu = (weights * x).sum() / w_sum
+    var = (weights * (x - mu) ** 2).sum() / w_sum
+    if var <= 1e-9 or mu <= 0 or mu >= 1:
+        return 1.0, 1.0
+    nu = mu * (1 - mu) / var - 1
+    if nu <= 0:
+        return 1.0, 1.0
+    return max(0.5, mu * nu), max(0.5, (1 - mu) * nu)
 
-    For each voxel, the explained / unexplained variance ratio gives an F
-    statistic with (n_params, n_trials - n_params - 1) degrees of freedom.
-    Benjamini-Hochberg controls the false-discovery rate at level q across
-    all voxels in the ROI.
+
+def _beta_mixture_em(x, max_iter=400, tol=1e-6, restarts=12):
+    """EM fit of a 2-component Beta mixture to R² values in (0, 1).
+
+    Lifted from ``retinonumeral.analyses._beta_mixture`` (which was in
+    turn adapted from ``retsupp.modeling.compute_r2_mixture``). The
+    fit is restarted from several seedings and the highest-likelihood
+    solution is kept.
     """
-    from scipy.stats import f as f_dist
+    from scipy.stats import beta as beta_dist
 
+    x = np.clip(np.asarray(x, dtype=np.float64), 1e-6, 1 - 1e-6)
+    rng = np.random.default_rng(0)
+    median_x = float(np.median(x))
+
+    inits = [(np.array([1.5, 2.5]), np.array([30.0, 6.0]),
+              np.array([0.8, 0.2]))]
+    lo = x[x < median_x]
+    hi = x[x > np.quantile(x, 0.90)]
+    if len(lo) > 5 and len(hi) > 5:
+        a0, b0 = _moment_match_beta(np.ones(len(lo)), lo)
+        a1, b1 = _moment_match_beta(np.ones(len(hi)), hi)
+        inits.append((np.array([a0, a1]), np.array([b0, b1]),
+                      np.array([0.9, 0.1])))
+    for _ in range(restarts - len(inits)):
+        mu0 = rng.uniform(0.002, max(0.05, median_x))
+        mu1 = rng.uniform(0.10, 0.50)
+        a = np.array([2.0, 2.0 + 4 * mu1])
+        b = np.array([(1 - mu0) / mu0 * a[0], (1 - mu1) / mu1 * a[1]])
+        inits.append((a, b, np.array([0.9, 0.1])))
+
+    best = None
+    for a_init, b_init, w_init in inits:
+        a, b, w = a_init.copy(), b_init.copy(), w_init.copy()
+        prev_ll = -np.inf
+        resp = None
+        for _ in range(max_iter):
+            log_p = np.column_stack([
+                beta_dist.logpdf(x, a[0], b[0]) + np.log(w[0] + 1e-12),
+                beta_dist.logpdf(x, a[1], b[1]) + np.log(w[1] + 1e-12),
+            ])
+            m = log_p.max(axis=1, keepdims=True)
+            log_norm = m + np.log(np.exp(log_p - m).sum(axis=1, keepdims=True))
+            ll = float(log_norm.sum())
+            resp = np.exp(log_p - log_norm)
+            n_k = resp.sum(axis=0)
+            w_new = np.clip(n_k / len(x), 0.02, 0.98)
+            w = w_new / w_new.sum()
+            for k in range(2):
+                a[k], b[k] = _moment_match_beta(resp[:, k], x)
+            means = a / (a + b)
+            noise_idx = int(np.argmin(means))
+            if means[noise_idx] > median_x and (x < median_x).any():
+                a[noise_idx], b[noise_idx] = _moment_match_beta(
+                    np.ones((x < median_x).sum()), x[x < median_x])
+            if abs(ll - prev_ll) < tol:
+                break
+            prev_ll = ll
+        means = a / (a + b)
+        if abs(means[0] - means[1]) < 0.01:
+            continue
+        if best is None or ll > best['ll']:
+            best = {'a': a.copy(), 'b': b.copy(), 'w': w.copy(),
+                    'resp': resp.copy(), 'll': ll}
+    if best is None:
+        # Degenerate fallback — every restart collapsed.
+        a = np.array([2.0, 4.0]); b = np.array([50.0, 10.0])
+        w = np.array([0.8, 0.2])
+        log_p = np.column_stack([
+            beta_dist.logpdf(x, a[0], b[0]) + np.log(w[0]),
+            beta_dist.logpdf(x, a[1], b[1]) + np.log(w[1])])
+        log_p -= log_p.max(axis=1, keepdims=True)
+        p = np.exp(log_p); resp = p / p.sum(axis=1, keepdims=True)
+        best = {'a': a, 'b': b, 'w': w, 'resp': resp, 'll': -np.inf}
+    return best
+
+
+def _fit_p_signal(r2):
+    """Per-voxel P(signal | R²) from a 2-Beta mixture, plus a fit summary."""
+    r2 = np.asarray(r2, dtype=float)
+    out = np.full_like(r2, np.nan, dtype=np.float32)
+    usable = np.isfinite(r2) & (r2 > 0) & (r2 < 0.99)
+    if usable.sum() < 50:
+        return out, {'reason': f'n_voxels={int(usable.sum())} too small'}
+    fit = _beta_mixture_em(r2[usable])
+    means = fit['a'] / (fit['a'] + fit['b'])
+    sig_idx = int(np.argmax(means))
+    out[usable] = fit['resp'][:, sig_idx].astype(np.float32)
+    summary = {
+        'signal_alpha': float(fit['a'][sig_idx]),
+        'signal_beta':  float(fit['b'][sig_idx]),
+        'noise_alpha':  float(fit['a'][1 - sig_idx]),
+        'noise_beta':   float(fit['b'][1 - sig_idx]),
+        'signal_weight': float(fit['w'][sig_idx]),
+        'noise_weight':  float(fit['w'][1 - sig_idx]),
+        'signal_mean':   float(means[sig_idx]),
+        'noise_mean':    float(means[1 - sig_idx]),
+        'log_likelihood': float(fit['ll']),
+        'n_voxels': int(usable.sum()),
+    }
+    return out, summary
+
+
+def _fdr_significant_voxels(train_data, train_pred, p_thresh=0.95,
+                             min_voxels=10):
+    """Voxels with posterior P(signal | R²) > p_thresh, via 2-Beta mixture.
+
+    Empirical-Bayes (local) FDR — adapts to whatever the actual null
+    distribution of R² looks like for these data (which for fMRI single-
+    trial GLM betas is *not* the parametric F-null). Falls back to top
+    ``min_voxels`` by R² if the mixture passes fewer than that, so a
+    degenerate fold doesn't produce an empty selection.
+
+    Returns
+    -------
+    keep : 1-D int array of voxel indices.
+    info : dict with mixture summary + actual threshold used.
+    """
     train_data = np.asarray(train_data, dtype=np.float64)
     train_pred = np.asarray(train_pred, dtype=np.float64)
-    n_trials = train_data.shape[0]
-    df1 = max(int(n_model_params), 1)
-    df2 = max(n_trials - df1 - 1, 1)
-
     ss_res = np.sum((train_data - train_pred) ** 2, axis=0)
     ss_tot = np.sum(
         (train_data - train_data.mean(axis=0, keepdims=True)) ** 2, axis=0)
     r2 = 1.0 - ss_res / np.maximum(ss_tot, 1e-12)
-    r2 = np.clip(r2, 0.0, 1.0 - 1e-9)
-    f_stat = (r2 / (1.0 - r2)) * df2 / df1
-    p_vals = np.clip(1.0 - f_dist.cdf(f_stat, df1, df2), 0.0, 1.0)
 
-    # Benjamini-Hochberg step-up.
-    n = len(p_vals)
-    order = np.argsort(p_vals)
-    sorted_p = p_vals[order]
-    thresh = q * np.arange(1, n + 1) / n
-    passing = sorted_p <= thresh
-    if not passing.any():
-        return np.array([], dtype=int)
-    cutoff = np.where(passing)[0].max()
-    return np.sort(order[:cutoff + 1])
+    p_signal, summary = _fit_p_signal(r2)
+    keep = np.where(np.nan_to_num(p_signal) > p_thresh)[0]
+    fallback = False
+    if len(keep) < min_voxels:
+        keep = np.argsort(-np.nan_to_num(r2))[:min_voxels]
+        fallback = True
+    info = dict(summary)
+    info['p_thresh'] = float(p_thresh)
+    info['n_kept'] = int(len(keep))
+    info['fallback'] = bool(fallback)
+    return np.sort(keep), info
 
 
 def _decode_test_trials(params, train_data, train_par, test_data,
@@ -390,8 +505,7 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
         map_train_pred = model.predict(
             parameters=map_pars, paradigm=train_par.to_frame())
 
-        # --- FDR voxel selection + posterior-mean decoding ---
-        n_model_params = len(model.parameter_labels)
+        # --- FDR (Beta-mixture) voxel selection + posterior-mean decoding ---
         stim_grid = np.linspace(
             float(paradigm.min()), float(paradigm.max()), 201,
             dtype=np.float32)
@@ -402,14 +516,15 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                 ('classical', cls_train_pred, cls_pars),
                 ('ml',        ml_train_pred,  ml_pars),
                 ('bayes',     map_train_pred, map_pars)):
-            sig = _fdr_significant_voxels(
-                train_data.values, train_pred_df.values, n_model_params)
+            sig, fdr_info = _fdr_significant_voxels(
+                train_data.values, train_pred_df.values)
             decoded = _decode_test_trials(
                 fit_pars, train_data, train_par, test_data,
                 sig, stim_grid, max_resid_iter=decode_iter)
             if decoded is None:
                 decoding[method] = dict(n_sig=0, mae=np.nan,
-                                         median_ae=np.nan, decoded=None)
+                                         median_ae=np.nan, decoded=None,
+                                         fdr_info=fdr_info)
             else:
                 err = np.abs(decoded - true_test)
                 decoding[method] = dict(
@@ -417,7 +532,8 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                     mae=float(np.mean(err)),
                     median_ae=float(np.median(err)),
                     decoded=decoded,
-                    true=true_test)
+                    true=true_test,
+                    fdr_info=fdr_info)
 
         print(f'  classical: train R² {cls_train_r2:.3f} | '
               f'cvR² mean {float(cls_cvr2.mean()):.3f} | '
@@ -484,15 +600,21 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
         output_dir, f'sub-{subject}_range-{suffix}_desc-hyperpars.tsv'),
         sep='\t', index=False)
 
-    # Decoding summary: one row per (fold, method).
+    # Decoding summary: one row per (fold, method). Mixture params
+    # included so we can sanity-check the empirical-null fit.
     dec_rows = []
     for r in fold_results:
         for method, d in r['decoding'].items():
+            info = d.get('fdr_info', {})
             dec_rows.append(dict(
                 session=r['session'], run2=r['run2'],
                 method=method, n_sig_voxels=d['n_sig'],
                 mae=d['mae'], median_ae=d['median_ae'],
-                stim_range=stim_range))
+                stim_range=stim_range,
+                fdr_fallback=info.get('fallback', False),
+                fdr_noise_mean=info.get('noise_mean', np.nan),
+                fdr_signal_mean=info.get('signal_mean', np.nan),
+                fdr_signal_weight=info.get('signal_weight', np.nan)))
     pd.DataFrame(dec_rows).to_csv(op.join(
         output_dir, f'sub-{subject}_range-{suffix}_desc-decoding.tsv'),
         sep='\t', index=False)
