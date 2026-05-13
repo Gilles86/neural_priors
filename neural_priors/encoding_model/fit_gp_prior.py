@@ -224,16 +224,26 @@ def fit_fold_bayes(model, train_data, train_par, distance_matrix,
             fitter.map_sigma)
 
 
-def fit_fold_bayes_no_prior(model, train_data, train_par, classical_pars,
+def fit_fold_bayes_no_prior(model, train_data, train_par, init_pars,
                              max_iter, progressbar):
     """Same Gaussian-likelihood + per-vertex sigma loop as fit_fold_bayes,
     but with no GP prior. This isolates the contribution of the prior
     from the contribution of the noise model / likelihood formulation.
+
+    Uses the *same* naive init as the classical fit (not a classical
+    warm start), so the head-to-head with classical is fair: equal
+    optimization budget, equal starting point, only the loss differs
+    (Gaussian likelihood with per-vertex sigma vs SSQ).
     """
     fitter = BayesianParameterFitter(
         model, train_data, train_par, priors={})
-    fitter.classical_estimates = classical_pars
-    fitter.fit_map(max_n_iterations=max_iter, progressbar=progressbar)
+    # Stage-1 only needed for sigma^2 init from residuals; reuse the
+    # naive init pars as if they were the classical fit so fit_map's
+    # initialization path works without running another classical loop.
+    fitter.classical_estimates = init_pars
+    fitter.fit_map(max_n_iterations=max_iter,
+                    init_pars=init_pars,
+                    progressbar=progressbar)
     return fitter.map_estimates, fitter.map_sigma
 
 
@@ -273,9 +283,10 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
         cls_cvr2 = get_rsq(test_data, cls_pred)
 
         # 2. No-prior ML fit: same Gaussian-likelihood loop as Bayes,
-        #    same init pars, no GP prior — isolates the prior's effect.
+        #    SAME NAIVE INIT AS CLASSICAL (cold start), no GP prior.
+        #    Isolates the loss-function effect from the prior effect.
         ml_pars, ml_sigma = fit_fold_bayes_no_prior(
-            model, train_data, train_par, cls_pars,
+            model, train_data, train_par, init,
             max_iter=max_iter, progressbar=False)
         ml_pred = model.predict(
             parameters=ml_pars, paradigm=test_par.to_frame())
