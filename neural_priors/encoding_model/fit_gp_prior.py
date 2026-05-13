@@ -224,6 +224,83 @@ def fit_fold_bayes(model, train_data, train_par, distance_matrix,
             fitter.map_sigma)
 
 
+def _fdr_significant_voxels(train_data, train_pred, n_model_params, q=0.05):
+    """Voxels with BH-FDR-corrected p < q from an F-test on training R².
+
+    For each voxel, the explained / unexplained variance ratio gives an F
+    statistic with (n_params, n_trials - n_params - 1) degrees of freedom.
+    Benjamini-Hochberg controls the false-discovery rate at level q across
+    all voxels in the ROI.
+    """
+    from scipy.stats import f as f_dist
+
+    train_data = np.asarray(train_data, dtype=np.float64)
+    train_pred = np.asarray(train_pred, dtype=np.float64)
+    n_trials = train_data.shape[0]
+    df1 = max(int(n_model_params), 1)
+    df2 = max(n_trials - df1 - 1, 1)
+
+    ss_res = np.sum((train_data - train_pred) ** 2, axis=0)
+    ss_tot = np.sum(
+        (train_data - train_data.mean(axis=0, keepdims=True)) ** 2, axis=0)
+    r2 = 1.0 - ss_res / np.maximum(ss_tot, 1e-12)
+    r2 = np.clip(r2, 0.0, 1.0 - 1e-9)
+    f_stat = (r2 / (1.0 - r2)) * df2 / df1
+    p_vals = np.clip(1.0 - f_dist.cdf(f_stat, df1, df2), 0.0, 1.0)
+
+    # Benjamini-Hochberg step-up.
+    n = len(p_vals)
+    order = np.argsort(p_vals)
+    sorted_p = p_vals[order]
+    thresh = q * np.arange(1, n + 1) / n
+    passing = sorted_p <= thresh
+    if not passing.any():
+        return np.array([], dtype=int)
+    cutoff = np.where(passing)[0].max()
+    return np.sort(order[:cutoff + 1])
+
+
+def _decode_test_trials(model, params, train_resid, test_data, sig_voxels,
+                         stim_grid):
+    """Posterior-mean decode each test trial under an independent-voxel
+    Gaussian likelihood with a uniform prior over ``stim_grid``.
+
+    The readout is ``E[s | data] = Σ_s p(s | data) · s`` where
+    ``p(s | data) ∝ exp(log_lik(s))``. Better than argmax for
+    population-code decoding: integrates information across the whole
+    likelihood landscape, not just its peak, and degrades gracefully
+    when the likelihood is wide or bimodal.
+
+    Returns ``None`` if no voxels pass FDR — caller should skip metrics.
+    """
+    if len(sig_voxels) == 0:
+        return None
+
+    sig_voxels = np.asarray(sig_voxels, dtype=int)
+    sigma = np.std(np.asarray(train_resid)[:, sig_voxels], axis=0)
+    sigma = np.maximum(sigma, 1e-3).astype(np.float64)
+
+    sig_params = params.iloc[sig_voxels]
+    grid_par = pd.DataFrame({'x': stim_grid.astype(np.float32)})
+    grid_pred = np.asarray(
+        model.predict(parameters=sig_params, paradigm=grid_par).values,
+        dtype=np.float64)                                        # (n_grid, n_sig)
+    test = np.asarray(test_data.iloc[:, sig_voxels].values,
+                       dtype=np.float64)                          # (n_test, n_sig)
+
+    # ll[t, s] = -0.5 * Σᵥ ((test[t,v] - grid_pred[s,v]) / σᵥ)²
+    diff = (test[:, None, :] - grid_pred[None, :, :]) / sigma[None, None, :]
+    log_lik = -0.5 * np.sum(diff ** 2, axis=-1)                  # (n_test, n_grid)
+
+    # Normalize to posterior via log-sum-exp; trapezoidal weighting on
+    # the stim grid would be more faithful for non-uniform grids — for a
+    # uniform grid it just renormalises and doesn't change the mean.
+    log_lik -= log_lik.max(axis=1, keepdims=True)
+    posterior = np.exp(log_lik)
+    posterior /= posterior.sum(axis=1, keepdims=True)
+    return posterior @ stim_grid
+
+
 def fit_fold_bayes_no_prior(model, train_data, train_par, init_pars,
                              max_iter, progressbar):
     """Same Gaussian-likelihood + per-vertex sigma loop as fit_fold_bayes,
@@ -281,16 +358,18 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
         cls_pred = model.predict(
             parameters=cls_pars, paradigm=test_par.to_frame())
         cls_cvr2 = get_rsq(test_data, cls_pred)
+        cls_train_pred = model.predict(
+            parameters=cls_pars, paradigm=train_par.to_frame())
 
-        # 2. No-prior ML fit: same Gaussian-likelihood loop as Bayes,
-        #    SAME NAIVE INIT AS CLASSICAL (cold start), no GP prior.
-        #    Isolates the loss-function effect from the prior effect.
+        # 2. No-prior ML fit
         ml_pars, ml_sigma = fit_fold_bayes_no_prior(
             model, train_data, train_par, init,
             max_iter=max_iter, progressbar=False)
         ml_pred = model.predict(
             parameters=ml_pars, paradigm=test_par.to_frame())
         ml_cvr2 = get_rsq(test_data, ml_pred)
+        ml_train_pred = model.predict(
+            parameters=ml_pars, paradigm=train_par.to_frame())
 
         # 3. Bayesian fit with GP priors on every parameter
         map_pars, hyperpars_dict, sigma = fit_fold_bayes(
@@ -299,11 +378,47 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
         map_pred = model.predict(
             parameters=map_pars, paradigm=test_par.to_frame())
         map_cvr2 = get_rsq(test_data, map_pred)
+        map_train_pred = model.predict(
+            parameters=map_pars, paradigm=train_par.to_frame())
+
+        # --- FDR voxel selection + posterior-mean decoding ---
+        n_model_params = len(model.parameter_labels)
+        stim_grid = np.linspace(
+            float(paradigm.min()), float(paradigm.max()), 201,
+            dtype=np.float32)
+        true_test = test_par.values.astype(np.float32)
+        decoding = {}
+        for method, train_pred_df, fit_pars in (
+                ('classical', cls_train_pred, cls_pars),
+                ('ml',        ml_train_pred,  ml_pars),
+                ('bayes',     map_train_pred, map_pars)):
+            sig = _fdr_significant_voxels(
+                train_data.values, train_pred_df.values, n_model_params)
+            train_resid = train_data.values - train_pred_df.values
+            decoded = _decode_test_trials(
+                model, fit_pars, train_resid, test_data, sig, stim_grid)
+            if decoded is None:
+                decoding[method] = dict(n_sig=0, mae=np.nan,
+                                         median_ae=np.nan, decoded=None)
+            else:
+                err = np.abs(decoded - true_test)
+                decoding[method] = dict(
+                    n_sig=int(len(sig)),
+                    mae=float(np.mean(err)),
+                    median_ae=float(np.median(err)),
+                    decoded=decoded,
+                    true=true_test)
 
         print(f'  classical: train R² {cls_train_r2:.3f} | '
-              f'cvR² mean {float(cls_cvr2.mean()):.3f}')
-        print(f'  ml(no-prior): cvR² mean {float(ml_cvr2.mean()):.3f}')
-        print(f'  bayes      : cvR² mean {float(map_cvr2.mean()):.3f}')
+              f'cvR² mean {float(cls_cvr2.mean()):.3f} | '
+              f'decode {decoding["classical"]["n_sig"]} vx '
+              f'medAE {decoding["classical"]["median_ae"]:.2f}')
+        print(f'  ml       : cvR² mean {float(ml_cvr2.mean()):.3f} | '
+              f'decode {decoding["ml"]["n_sig"]} vx '
+              f'medAE {decoding["ml"]["median_ae"]:.2f}')
+        print(f'  bayes    : cvR² mean {float(map_cvr2.mean()):.3f} | '
+              f'decode {decoding["bayes"]["n_sig"]} vx '
+              f'medAE {decoding["bayes"]["median_ae"]:.2f}')
         for name, hp in hyperpars_dict.items():
             print(f'    prior[{name}]: l={hp["lengthscale"]:.2f} mm, '
                   f'v={hp["variance"]:.3f}, nug={hp["nugget"]:.3f}')
@@ -320,6 +435,7 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
             'hyperparameters': hyperpars_dict,
             'ml_sigma': ml_sigma,
             'bayes_sigma': sigma,
+            'decoding': decoding,
         })
 
     # ------- Save outputs per range -------
@@ -356,6 +472,35 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                                  parameter=pname, **hp))
     pd.DataFrame(hp_rows).to_csv(op.join(
         output_dir, f'sub-{subject}_range-{suffix}_desc-hyperpars.tsv'),
+        sep='\t', index=False)
+
+    # Decoding summary: one row per (fold, method).
+    dec_rows = []
+    for r in fold_results:
+        for method, d in r['decoding'].items():
+            dec_rows.append(dict(
+                session=r['session'], run2=r['run2'],
+                method=method, n_sig_voxels=d['n_sig'],
+                mae=d['mae'], median_ae=d['median_ae'],
+                stim_range=stim_range))
+    pd.DataFrame(dec_rows).to_csv(op.join(
+        output_dir, f'sub-{subject}_range-{suffix}_desc-decoding.tsv'),
+        sep='\t', index=False)
+
+    # Per-trial decoded values for later scatterplots.
+    trial_rows = []
+    for r in fold_results:
+        for method, d in r['decoding'].items():
+            if d['decoded'] is None:
+                continue
+            for tr, (dec, tru) in enumerate(zip(d['decoded'], d['true'])):
+                trial_rows.append(dict(
+                    session=r['session'], run2=r['run2'],
+                    method=method, trial=tr,
+                    decoded=float(dec), true=float(tru),
+                    stim_range=stim_range))
+    pd.DataFrame(trial_rows).to_csv(op.join(
+        output_dir, f'sub-{subject}_range-{suffix}_desc-decoded_trials.tsv'),
         sep='\t', index=False)
 
     summary = cvr2_long.groupby('method')['cvr2'].agg(['mean', 'median'])
