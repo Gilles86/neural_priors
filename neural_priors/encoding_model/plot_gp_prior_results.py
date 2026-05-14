@@ -59,8 +59,17 @@ def _setup_style():
 
 
 def _concat_tsv(bids_folder, pattern):
-    """Concatenate matching TSVs across both pipelines and stamp with subject+pipeline."""
+    """Concatenate matching TSVs across both pipelines.
+
+    Stamps each row with ``subject`` and ``pipeline``, and back-fills
+    ``stim_range`` from the filename (range-{narrow,wide}) when the
+    TSV doesn't already have that column — the hyperparameter TSV is
+    range-specific by filename but the range isn't inside the file.
+    """
+    import re as _re
+
     frames = []
+    range_re = _re.compile(r'_range-(narrow|wide)_')
     for pipeline, subdir in PIPELINES.items():
         root = Path(bids_folder) / 'derivatives' / 'encoding_models' / subdir
         for path in sorted(root.glob(pattern)):
@@ -68,6 +77,9 @@ def _concat_tsv(bids_folder, pattern):
             df = pd.read_csv(path, sep='\t')
             df.insert(0, 'subject', subj)
             df.insert(1, 'pipeline', pipeline)
+            if 'stim_range' not in df.columns:
+                m = range_re.search(path.name)
+                df['stim_range'] = m.group(1) if m else 'unknown'
             frames.append(df)
     if not frames:
         return pd.DataFrame()
@@ -113,16 +125,12 @@ def fig_decoding_r(decoding):
         kind='box', order=METHOD_ORDER, hue_order=OMEGA_ORDER,
         row_order=PIPELINE_ORDER, col_order=RANGES,
         height=3.6, aspect=1.2, palette={'plain': '#aaa', 'distance': '#1f77b4'})
-    for (row_val, col_val, _), ax in g.axes_dict.items() if hasattr(g, 'axes_dict') else []:
-        pass
-    # The newer seaborn doesn't always expose axes_dict; do it the manual way:
     for r_idx, pipeline in enumerate(PIPELINE_ORDER):
         for c_idx, rng in enumerate(RANGES):
             ax = g.axes[r_idx, c_idx]
             paper = PAPER_R.get(rng)
             if paper is not None:
-                ax.axhline(paper, color='k', ls='--', lw=1, alpha=0.6,
-                            label=f'Paper r = {paper:.2f}' if r_idx == 0 and c_idx == 0 else None)
+                ax.axhline(paper, color='k', ls='--', lw=1, alpha=0.6)
             ax.axhline(0, color='0.6', lw=0.6)
     g.set_axis_labels('Method', 'Per-subject mean r (decoded vs true)')
     g.set_titles('Pipeline = {row_name} | Range = {col_name}')
@@ -220,40 +228,42 @@ def fig_contrasts(decoding):
         columns=['pipeline', 'method', 'omega'],
         values='r').reset_index()
 
-    def _safe(p, m, o):
-        try:
-            return wide[(p, m, o)]
-        except KeyError:
-            return pd.Series(np.nan, index=wide.index)
+    cols = set(wide.columns)
+    def _g(row, p, m, o):
+        key = (p, m, o)
+        if key not in cols:
+            return np.nan
+        v = row[key]
+        # iterrows can yield Series for duplicate column keys; coerce safely.
+        return float(v) if np.isscalar(v) else float(np.asarray(v).ravel()[0])
 
     rows = []
     for _, r in wide.iterrows():
-        s = r['subject']
-        rng = r['stim_range']
-        get = lambda p, m, o: r.get((p, m, o), np.nan)
+        s = r[('subject', '', '')] if ('subject', '', '') in cols else r['subject']
+        rng = r[('stim_range', '', '')] if ('stim_range', '', '') in cols else r['stim_range']
         rows.append(dict(subject=s, stim_range=rng,
-                          contrast='dist − plain (smoothed/bayes)',
-                          delta=get('smoothed', 'bayes', 'distance')
-                                 - get('smoothed', 'bayes', 'plain')))
+                          contrast='dist − plain (sm/bayes)',
+                          delta=_g(r, 'smoothed', 'bayes', 'distance')
+                                 - _g(r, 'smoothed', 'bayes', 'plain')))
         rows.append(dict(subject=s, stim_range=rng,
                           contrast='dist − plain (unsm/bayes)',
-                          delta=get('unsmoothed', 'bayes', 'distance')
-                                 - get('unsmoothed', 'bayes', 'plain')))
+                          delta=_g(r, 'unsmoothed', 'bayes', 'distance')
+                                 - _g(r, 'unsmoothed', 'bayes', 'plain')))
         rows.append(dict(subject=s, stim_range=rng,
                           contrast='bayes − classical (sm/dist)',
-                          delta=get('smoothed', 'bayes', 'distance')
-                                 - get('smoothed', 'classical', 'distance')))
+                          delta=_g(r, 'smoothed', 'bayes', 'distance')
+                                 - _g(r, 'smoothed', 'classical', 'distance')))
         rows.append(dict(subject=s, stim_range=rng,
                           contrast='bayes(unsm,dist) − classical(sm,dist)',
-                          delta=get('unsmoothed', 'bayes', 'distance')
-                                 - get('smoothed', 'classical', 'distance')))
+                          delta=_g(r, 'unsmoothed', 'bayes', 'distance')
+                                 - _g(r, 'smoothed', 'classical', 'distance')))
     df = pd.DataFrame(rows).dropna(subset=['delta'])
     if df.empty:
         return None
     g = sns.catplot(
         data=df, x='stim_range', y='delta', col='contrast',
         kind='strip', col_wrap=2, height=3.6, aspect=1.2,
-        col_order=df['contrast'].unique(), palette='tab10')
+        col_order=list(df['contrast'].unique()), palette='tab10')
     for ax in g.axes.flat:
         ax.axhline(0, color='k', ls='--', lw=1, alpha=0.4)
     g.set_axis_labels('Range', 'Δ Pearson r')
