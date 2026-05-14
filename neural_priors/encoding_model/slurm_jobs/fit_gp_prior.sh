@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
-#SBATCH --time=240:00
+#SBATCH --time=360:00
 #SBATCH --output=/dev/null
 
 # Hierarchical-Bayesian (GP-prior) vs classical LogGaussianPRF fit on NPC.
