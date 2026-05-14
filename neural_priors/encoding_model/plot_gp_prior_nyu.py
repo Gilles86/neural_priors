@@ -198,7 +198,7 @@ def fig_headline_r(decoding, out_path):
                 order=METHOD_ORDER, hue_order=OMEGA_ORDER,
                 palette={'plain': '#5c5c5c', 'distance': '#1f3a73'},
                 dodge=0.4, join=False, markers='_', scale=1.5,
-                errorbar=None, ax=ax)
+                errorbar=('ci', 95), n_boot=2000, seed=0, capsize=0.15, ax=ax)
             if ax.get_legend():
                 ax.get_legend().remove()
 
@@ -268,7 +268,7 @@ def fig_medae(decoding, out_path):
                 order=METHOD_ORDER, hue_order=OMEGA_ORDER,
                 palette={'plain': '#5c5c5c', 'distance': '#1f3a73'},
                 dodge=0.4, join=False, markers='_', scale=1.5,
-                errorbar=None, ax=ax)
+                errorbar=('ci', 95), n_boot=2000, seed=0, capsize=0.15, ax=ax)
             if ax.get_legend():
                 ax.get_legend().remove()
 
@@ -353,7 +353,7 @@ def fig_contrasts(decoding, out_path):
             data=sub, x='contrast', y='delta',
             order=[c for c, _ in contrasts],
             color='#1f3a73', markers='_', scale=1.5,
-            join=False, errorbar=None, ax=ax)
+            join=False, errorbar=('ci', 95), n_boot=2000, seed=0, capsize=0.15, ax=ax)
         ax.axhline(0, color='0.5', lw=0.6, ls='--')
         ax.set_title(RANGE_NICE[rng], pad=4)
         ax.set_xlabel('')
