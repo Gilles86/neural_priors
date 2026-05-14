@@ -156,9 +156,12 @@ def _per_subject(decoding, value):
 
 
 def _empty_panel(ax, msg):
+    # Hide ticks via tick_params (per-axis visibility), NOT set_xticks([]),
+    # because sharex=True makes set_xticks modify the locator on every panel.
     ax.text(0.5, 0.5, msg, transform=ax.transAxes, ha='center', va='center',
             fontsize=8, color='0.5')
-    ax.set_xticks([]); ax.set_yticks([])
+    ax.tick_params(left=False, bottom=False,
+                   labelleft=False, labelbottom=False)
     for s in ax.spines.values():
         s.set_visible(False)
 
@@ -308,16 +311,16 @@ def fig_contrasts(decoding, out_path):
         return float(v) if np.isscalar(v) else float(np.asarray(v).ravel()[0])
 
     contrasts = [
-        ('Distance Ω − Plain Ω\n(Smoothed, Bayes)',
+        ('Dist Ω − Plain Ω  (Sm., Bayes)',
          lambda r: _v(r, 'smoothed', 'bayes', 'distance')
                     - _v(r, 'smoothed', 'bayes', 'plain')),
-        ('Distance Ω − Plain Ω\n(Unsmoothed, Bayes)',
+        ('Dist Ω − Plain Ω  (Unsm., Bayes)',
          lambda r: _v(r, 'unsmoothed', 'bayes', 'distance')
                     - _v(r, 'unsmoothed', 'bayes', 'plain')),
-        ('Bayes − Classical\n(Unsmoothed, Distance Ω)',
+        ('Bayes − Classical  (Unsm., Dist Ω)',
          lambda r: _v(r, 'unsmoothed', 'bayes', 'distance')
                     - _v(r, 'unsmoothed', 'classical', 'distance')),
-        ('Bayes (unsm, dist) −\nClassical (sm, dist)',
+        ('Bayes(Unsm.) − Classical(Sm.)  (Dist Ω)',
          lambda r: _v(r, 'unsmoothed', 'bayes', 'distance')
                     - _v(r, 'smoothed', 'classical', 'distance')),
     ]
@@ -334,7 +337,7 @@ def fig_contrasts(decoding, out_path):
         print(f'  skipping {out_path}: no contrast data')
         return None
 
-    fig, axes = plt.subplots(1, 2, figsize=(7.25, 3.4),
+    fig, axes = plt.subplots(1, 2, figsize=(8.5, 4.4),
                               sharey=True, constrained_layout=True)
     for ax, rng in zip(axes, RANGES):
         sub = df[df['stim_range'] == rng]
@@ -355,8 +358,10 @@ def fig_contrasts(decoding, out_path):
         ax.set_title(RANGE_NICE[rng], pad=4)
         ax.set_xlabel('')
         ax.set_ylabel('Δ within-fold r')
+        ax.set_xticks(range(len(contrasts)))
+        ax.set_xticklabels([c for c, _ in contrasts])
         for label in ax.get_xticklabels():
-            label.set_rotation(20)
+            label.set_rotation(35)
             label.set_horizontalalignment('right')
 
     sns.despine(fig=fig, offset=5, trim=True)
