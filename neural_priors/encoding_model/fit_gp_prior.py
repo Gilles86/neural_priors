@@ -226,22 +226,70 @@ def fit_fold_bayes(model, train_data, train_par, distance_matrix,
             fitter.map_sigma)
 
 
+def fit_brain_r2_threshold(subject, bids_folder, alpha=0.05,
+                             wb_model_label=15):
+    """Fit logit-Gaussian R² mixture on whole-brain cvR² from the
+    existing neural_priors pipeline and return the α-FDR threshold.
+
+    Whole-brain cvR² gives a much cleaner empirical-null distribution
+    than NPC alone (lots of genuinely-noise voxels in white matter,
+    ventricles, non-task regions), so the mixture finds a sensible
+    signal/noise split rather than collapsing to fallback. The
+    resulting threshold is then applied to our per-fold NPC training
+    R²s for voxel selection.
+
+    Default ``wb_model_label=15`` is the user's standard
+    LinearScalingModel whole-brain fit. The R² scale isn't identical to
+    our LogGaussianPRF but the bimodal *shape* of the noise/signal
+    distribution is what matters for the threshold.
+    """
+    from braincoder.utils.stats import fit_r2_mixture, r2_fdr_threshold
+    from nilearn import image
+
+    key = f'model{wb_model_label}.cv.whole_brain.smoothed'
+    fn = op.join(bids_folder, 'derivatives', 'encoding_models', key,
+                  f'sub-{subject}', 'func',
+                  f'sub-{subject}_desc-cvr2.optim_space-T1w_pars.nii.gz')
+    if not op.exists(fn):
+        print(f'WARNING: no whole-brain cvR² at {fn}; '
+              f'falling back to per-fold NPC mixture')
+        return None, None
+    cvr2 = image.load_img(fn).get_fdata().ravel()
+    cvr2 = cvr2[np.isfinite(cvr2)]
+    try:
+        fit = fit_r2_mixture(cvr2)
+        threshold = r2_fdr_threshold(fit, alpha=alpha)
+        print(f'Whole-brain mixture: signal R² mean {fit["signal_mean_r2"]:.3f}, '
+              f'noise R² mean {fit["noise_mean_r2"]:.3f}, '
+              f'signal weight {fit["signal_weight"]:.2f}, '
+              f'α={alpha} R² threshold {threshold:.4f} (source: {key})')
+        return threshold, fit
+    except Exception as e:
+        print(f'WARNING: whole-brain mixture fit failed: {e!r}')
+        return None, None
+
+
 def _fdr_significant_voxels(train_data, train_pred, alpha=0.05,
-                             min_voxels=100):
+                             min_voxels=100, brain_threshold=None):
     """Voxels passing a tail-FDR threshold from a 2-Gaussian mixture on
     logit(R²), via :func:`braincoder.utils.stats.fit_r2_mixture`.
 
-    Empirical-Bayes FDR — the noise and signal components are learned
-    from this fold's R² distribution, not assumed to follow the
-    parametric F-null. The threshold is the smallest R² at which the
-    tail false-discovery rate is ≤ ``alpha``. Falls back to top
-    ``min_voxels`` by R² if the fit is degenerate or the threshold is
-    out of range.
+    Two modes:
 
-    The fallback default of 100 is calibrated for noisy single-trial
-    GLM data where the mixture often can't surface a clean signal
-    component (~ all-noise-looking R² distribution): top-10 was too
-    thin to give the residual-noise fit anything to work with.
+    * ``brain_threshold`` provided: use that R² threshold directly
+      (computed once per subject from a whole-brain mixture — see
+      :func:`fit_brain_r2_threshold`). The local NPC mixture is *not*
+      fitted; we just compare each voxel's training R² to the
+      pre-computed threshold.
+    * ``brain_threshold`` is ``None``: fit a per-fold local mixture on
+      the NPC training R²s and use its α-FDR threshold. Falls back to
+      top ``min_voxels`` by R² if the fit is degenerate.
+
+    The local fallback default of 100 is calibrated for noisy
+    single-trial GLM data where the *NPC-only* mixture often can't
+    surface a clean signal component. With the whole-brain threshold,
+    the mixture has a much cleaner empirical-null shape, so the
+    fallback should rarely trigger.
 
     Returns
     -------
@@ -259,12 +307,17 @@ def _fdr_significant_voxels(train_data, train_pred, alpha=0.05,
     r2_safe = np.nan_to_num(r2, nan=-np.inf)
 
     fit = None
-    threshold = float('inf')
-    try:
-        fit = fit_r2_mixture(r2)
-        threshold = r2_fdr_threshold(fit, alpha=alpha)
-    except ValueError:
-        pass  # too few voxels — falls through to top-N
+    if brain_threshold is not None and np.isfinite(brain_threshold):
+        threshold = float(brain_threshold)
+        source = 'whole_brain'
+    else:
+        threshold = float('inf')
+        source = 'npc_local'
+        try:
+            fit = fit_r2_mixture(r2)
+            threshold = r2_fdr_threshold(fit, alpha=alpha)
+        except ValueError:
+            pass  # too few voxels — falls through to top-N
 
     keep = np.where(np.isfinite(r2) & (r2 > threshold))[0]
     fallback = False
@@ -277,6 +330,7 @@ def _fdr_significant_voxels(train_data, train_pred, alpha=0.05,
     info['r2_threshold'] = float(threshold)
     info['n_kept'] = int(len(keep))
     info['fallback'] = bool(fallback)
+    info['source'] = source
     info['r2'] = r2.astype(np.float32)
     return np.sort(keep), info
 
@@ -412,7 +466,8 @@ def fit_fold_bayes_no_prior(model, train_data, train_par, init_pars,
 
 
 def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
-                    max_iter, debug, output_dir, smoothed=False):
+                    max_iter, debug, output_dir, smoothed=False,
+                    brain_threshold=None):
     """Fit classical + bayes across all folds, for a single stimulus range."""
     paradigm, data, _, _, _ = load_data(
         subject, bids_folder, roi=roi, stim_range=stim_range,
@@ -481,7 +536,8 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                 ('ml',        ml_train_pred,  ml_pars),
                 ('bayes',     map_train_pred, map_pars)):
             sig, fdr_info = _fdr_significant_voxels(
-                train_data.values, train_pred_df.values)
+                train_data.values, train_pred_df.values,
+                brain_threshold=brain_threshold)
             decoded = _decode_test_trials(
                 fit_pars, train_data, train_par, test_data,
                 sig, stim_grid, max_resid_iter=decode_iter)
@@ -639,9 +695,20 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
 
 
 def main(subject, bids_folder, roi='NPCr', stim_range='both',
-         smoothed=False, max_iter=2000, debug=False, output_dir=None):
+         smoothed=False, max_iter=2000, debug=False, output_dir=None,
+         wb_model_label=15):
     if debug:
         max_iter = 200
+
+    # Whole-brain R² mixture → empirical-null FDR threshold, computed
+    # once per subject. Saved derivatives from a related production
+    # model (default model 15) are much cheaper than fitting our own
+    # whole-brain pRFs and give a cleaner bimodal R² distribution than
+    # NPC alone, so the mixture finds a real signal/noise split. If the
+    # whole-brain output isn't present, we fall back to per-fold NPC
+    # mixture inside _fdr_significant_voxels.
+    brain_threshold, brain_fit = fit_brain_r2_threshold(
+        subject, bids_folder, alpha=0.05, wb_model_label=wb_model_label)
 
     # Load once (data, mask, voxel centroids) — distance matrix is shared
     # across ranges because the voxel set doesn't depend on the paradigm.
@@ -676,12 +743,25 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
     np.save(op.join(output_dir, f'sub-{subject}_desc-vertex_idx.npy'),
              vtx_idx)
 
+    # Save the whole-brain mixture summary so it's part of the subject's
+    # output (one record per subject).
+    if brain_fit is not None:
+        wb_record = dict(brain_fit)
+        wb_record['alpha'] = 0.05
+        wb_record['r2_threshold'] = float(brain_threshold)
+        wb_record['source'] = f'model{wb_model_label}.cv.whole_brain.smoothed'
+        pd.DataFrame([wb_record]).to_csv(
+            op.join(output_dir,
+                     f'sub-{subject}_desc-wholebrain_r2_mixture.tsv'),
+            sep='\t', index=False)
+
     ranges = ['narrow', 'wide'] if stim_range == 'both' else [stim_range]
     all_cvr2 = []
     for r in ranges:
         all_cvr2.append(_run_one_range(
             subject, bids_folder, roi, r, D, sub, masker,
-            max_iter, debug, output_dir, smoothed=smoothed))
+            max_iter, debug, output_dir, smoothed=smoothed,
+            brain_threshold=brain_threshold))
 
     pd.concat(all_cvr2, ignore_index=True).to_csv(
         op.join(output_dir, f'sub-{subject}_desc-cvr2_all.tsv'),
@@ -702,6 +782,10 @@ if __name__ == '__main__':
                         help='Use the spatially-smoothed single-trial '
                              'estimates instead of the unsmoothed pipeline. '
                              'Output goes under gp_prior_roi-{ROI}.smoothed/.')
+    parser.add_argument('--wb_model_label', type=int, default=15,
+                        help='Which neural_priors whole-brain model to '
+                             'source cvR² from for the FDR mixture '
+                             '(default 15, LinearScalingModel).')
     parser.add_argument('--max_iter', type=int, default=2000)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--output_dir', default=None)
@@ -709,5 +793,6 @@ if __name__ == '__main__':
     main(args.subject, args.bids_folder,
          roi=args.roi, stim_range=args.stim_range,
          smoothed=args.smoothed,
+         wb_model_label=args.wb_model_label,
          max_iter=args.max_iter,
          debug=args.debug, output_dir=args.output_dir)
