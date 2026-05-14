@@ -133,11 +133,13 @@ def initial_pars(n_vx, paradigm):
     })
 
 
-def load_data(subject, bids_folder, roi='NPCr', stim_range='wide'):
+def load_data(subject, bids_folder, roi='NPCr', stim_range='wide',
+               smoothed=False):
     """Load paradigm + masked single-trial estimates indexed by (session, run2).
 
     Restricts to one stimulus range ('wide', 'narrow') or pools both
-    ('both'). The (session, run2) index is used for leave-one-out CV.
+    ('both'). ``smoothed`` switches between the unsmoothed and spatially-
+    smoothed single-trial estimates (subject pipeline already has both).
     """
     sub = Subject(subject, bids_folder=bids_folder)
     paradigm_full = get_paradigm(sub, fit_responses=False)
@@ -163,7 +165,7 @@ def load_data(subject, bids_folder, roi='NPCr', stim_range='wide'):
 
     # Mask single-trial estimates; subset to the same trials we kept above.
     masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
-    data_img = sub.get_single_trial_estimates(session=None, smoothed=False)
+    data_img = sub.get_single_trial_estimates(session=None, smoothed=smoothed)
     data_2d = masker.fit_transform(data_img).astype(np.float32)
     data_full = pd.DataFrame(data_2d, index=get_paradigm(sub).index)
     # Subset to the same trials we kept; reindex to paradigm's CV index.
@@ -405,10 +407,11 @@ def fit_fold_bayes_no_prior(model, train_data, train_par, init_pars,
 
 
 def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
-                    max_iter, debug, output_dir):
+                    max_iter, debug, output_dir, smoothed=False):
     """Fit classical + bayes across all folds, for a single stimulus range."""
     paradigm, data, _, _, _ = load_data(
-        subject, bids_folder, roi=roi, stim_range=stim_range)
+        subject, bids_folder, roi=roi, stim_range=stim_range,
+        smoothed=smoothed)
     n_vx = data.shape[1]
     print(f'\n>>> stim_range={stim_range}: '
           f'{data.shape[0]} trials × {n_vx} voxels')
@@ -609,16 +612,17 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
 
 
 def main(subject, bids_folder, roi='NPCr', stim_range='both',
-         max_iter=2000, debug=False, output_dir=None):
+         smoothed=False, max_iter=2000, debug=False, output_dir=None):
     if debug:
         max_iter = 200
 
     # Load once (data, mask, voxel centroids) — distance matrix is shared
     # across ranges because the voxel set doesn't depend on the paradigm.
     _, _, masker, xyz, sub = load_data(
-        subject, bids_folder, roi=roi, stim_range='both')
+        subject, bids_folder, roi=roi, stim_range='both', smoothed=smoothed)
     n_vx = xyz.shape[0]
-    print(f'ROI={roi}: {n_vx} voxels')
+    smooth_tag = 'smoothed' if smoothed else 'unsmoothed'
+    print(f'ROI={roi} ({smooth_tag}): {n_vx} voxels')
 
     # Geodesic distances via nearest-vertex projection.
     hemi = _roi_to_hemi_letter(roi)
@@ -634,9 +638,12 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
           f'max {D.max():.1f} mm')
 
     if output_dir is None:
+        key = f'gp_prior_roi-{roi}'
+        if smoothed:
+            key += '.smoothed'
         output_dir = op.join(
             bids_folder, 'derivatives', 'encoding_models',
-            f'gp_prior_roi-{roi}', f'sub-{subject}', 'func')
+            key, f'sub-{subject}', 'func')
     os.makedirs(output_dir, exist_ok=True)
     np.save(op.join(output_dir, f'sub-{subject}_desc-distance.npy'), D)
     np.save(op.join(output_dir, f'sub-{subject}_desc-vertex_idx.npy'),
@@ -647,7 +654,7 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
     for r in ranges:
         all_cvr2.append(_run_one_range(
             subject, bids_folder, roi, r, D, sub, masker,
-            max_iter, debug, output_dir))
+            max_iter, debug, output_dir, smoothed=smoothed))
 
     pd.concat(all_cvr2, ignore_index=True).to_csv(
         op.join(output_dir, f'sub-{subject}_desc-cvr2_all.tsv'),
@@ -664,11 +671,16 @@ if __name__ == '__main__':
                         choices=['narrow', 'wide', 'both'], default='both',
                         help='Which stimulus range(s) to fit. "both" runs '
                              'narrow and wide separately.')
+    parser.add_argument('--smoothed', action='store_true',
+                        help='Use the spatially-smoothed single-trial '
+                             'estimates instead of the unsmoothed pipeline. '
+                             'Output goes under gp_prior_roi-{ROI}.smoothed/.')
     parser.add_argument('--max_iter', type=int, default=2000)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--output_dir', default=None)
     args = parser.parse_args()
     main(args.subject, args.bids_folder,
          roi=args.roi, stim_range=args.stim_range,
+         smoothed=args.smoothed,
          max_iter=args.max_iter,
          debug=args.debug, output_dir=args.output_dir)
