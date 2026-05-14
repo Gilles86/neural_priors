@@ -358,13 +358,14 @@ def fig_contrasts(decoding, out_path):
         ax.set_title(RANGE_NICE[rng], pad=4)
         ax.set_xlabel('')
         ax.set_ylabel('Δ within-fold r')
-        ax.set_xticks(range(len(contrasts)))
-        ax.set_xticklabels([c for c, _ in contrasts])
-        for label in ax.get_xticklabels():
-            label.set_rotation(35)
-            label.set_horizontalalignment('right')
 
-    sns.despine(fig=fig, offset=5, trim=True)
+    # Despine first so trim doesn't reset our tick labels.
+    sns.despine(fig=fig, offset=5, trim=False)
+    for ax in axes:
+        ax.set_xticks(range(len(contrasts)))
+        ax.set_xticklabels([c for c, _ in contrasts],
+                            rotation=30, ha='right',
+                            rotation_mode='anchor')
     fig.savefig(out_path)
     fig.savefig(out_path.replace('.pdf', '.png'), dpi=300,
                  bbox_inches='tight', pad_inches=0.02)
