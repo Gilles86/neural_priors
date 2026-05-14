@@ -487,28 +487,44 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                 sig, stim_grid, max_resid_iter=decode_iter)
             if decoded is None:
                 decoding[method] = dict(n_sig=0, mae=np.nan,
-                                         median_ae=np.nan, decoded=None,
-                                         fdr_info=fdr_info)
+                                         median_ae=np.nan, mae_log=np.nan,
+                                         median_ae_log=np.nan, r=np.nan,
+                                         decoded=None, fdr_info=fdr_info)
             else:
                 err = np.abs(decoded - true_test)
+                # log-space errors: numerosity stimuli are all > 0 here.
+                err_log = np.abs(np.log(np.clip(decoded, 1e-6, None))
+                                  - np.log(np.clip(true_test, 1e-6, None)))
+                # Per-fold Pearson r between decoded and true. The mean of
+                # per-fold r's (computed in the analysis notebook) is the
+                # right summary — pooling all trials across folds confounds
+                # within-fold structure (range context, drift) with the
+                # decoder's actual decoding power.
+                if (np.std(decoded) < 1e-9 or np.std(true_test) < 1e-9
+                        or len(decoded) < 3):
+                    r_fold = float('nan')
+                else:
+                    r_fold = float(np.corrcoef(decoded, true_test)[0, 1])
                 decoding[method] = dict(
                     n_sig=int(len(sig)),
                     mae=float(np.mean(err)),
                     median_ae=float(np.median(err)),
+                    mae_log=float(np.mean(err_log)),
+                    median_ae_log=float(np.median(err_log)),
+                    r=r_fold,
                     decoded=decoded,
                     true=true_test,
                     fdr_info=fdr_info)
 
-        print(f'  classical: train R² {cls_train_r2:.3f} | '
-              f'cvR² mean {float(cls_cvr2.mean()):.3f} | '
-              f'decode {decoding["classical"]["n_sig"]} vx '
-              f'medAE {decoding["classical"]["median_ae"]:.2f}')
-        print(f'  ml       : cvR² mean {float(ml_cvr2.mean()):.3f} | '
-              f'decode {decoding["ml"]["n_sig"]} vx '
-              f'medAE {decoding["ml"]["median_ae"]:.2f}')
-        print(f'  bayes    : cvR² mean {float(map_cvr2.mean()):.3f} | '
-              f'decode {decoding["bayes"]["n_sig"]} vx '
-              f'medAE {decoding["bayes"]["median_ae"]:.2f}')
+        def _summarize(name, cvr2, dec):
+            return (f'  {name:9s}: cvR² {float(cvr2.mean()):+.3f} | '
+                    f'decode {dec["n_sig"]} vx | '
+                    f'medAE {dec["median_ae"]:.2f} (log {dec["median_ae_log"]:.3f}) | '
+                    f'r {dec["r"]:+.3f}')
+        print(f'  (classical train R² {cls_train_r2:.3f})')
+        print(_summarize('classical', cls_cvr2, decoding['classical']))
+        print(_summarize('ml',        ml_cvr2,  decoding['ml']))
+        print(_summarize('bayes',     map_cvr2, decoding['bayes']))
         for name, hp in hyperpars_dict.items():
             print(f'    prior[{name}]: l={hp["lengthscale"]:.2f} mm, '
                   f'v={hp["variance"]:.3f}, nug={hp["nugget"]:.3f}')
@@ -564,16 +580,22 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
         output_dir, f'sub-{subject}_range-{suffix}_desc-hyperpars.tsv'),
         sep='\t', index=False)
 
-    # Decoding summary: one row per (fold, method). Mixture params
-    # included so we can sanity-check the empirical-null fit.
+    # Decoding summary: one row per (fold, method). Natural + log-space
+    # errors and within-fold Pearson r are all saved. The analysis
+    # notebook should average r across folds rather than pooling trials
+    # — pooling confounds within-fold structure (range context, drift)
+    # with the decoder's actual decoding power.
     dec_rows = []
     for r in fold_results:
         for method, d in r['decoding'].items():
-            info = d.get('fdr_info', {})
+            info = d.get('fdr_info', {}) or {}
             dec_rows.append(dict(
                 session=r['session'], run2=r['run2'],
                 method=method, n_sig_voxels=d['n_sig'],
                 mae=d['mae'], median_ae=d['median_ae'],
+                mae_log=d.get('mae_log', np.nan),
+                median_ae_log=d.get('median_ae_log', np.nan),
+                r=d.get('r', np.nan),
                 stim_range=stim_range,
                 fdr_fallback=info.get('fallback', False),
                 fdr_r2_threshold=info.get('r2_threshold', np.nan),
