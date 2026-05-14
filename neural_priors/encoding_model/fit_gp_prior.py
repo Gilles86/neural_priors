@@ -227,7 +227,7 @@ def fit_fold_bayes(model, train_data, train_par, distance_matrix,
 
 
 def _fdr_significant_voxels(train_data, train_pred, alpha=0.05,
-                             min_voxels=10):
+                             min_voxels=100):
     """Voxels passing a tail-FDR threshold from a 2-Gaussian mixture on
     logit(R²), via :func:`braincoder.utils.stats.fit_r2_mixture`.
 
@@ -237,6 +237,11 @@ def _fdr_significant_voxels(train_data, train_pred, alpha=0.05,
     tail false-discovery rate is ≤ ``alpha``. Falls back to top
     ``min_voxels`` by R² if the fit is degenerate or the threshold is
     out of range.
+
+    The fallback default of 100 is calibrated for noisy single-trial
+    GLM data where the mixture often can't surface a clean signal
+    component (~ all-noise-looking R² distribution): top-10 was too
+    thin to give the residual-noise fit anything to work with.
 
     Returns
     -------
