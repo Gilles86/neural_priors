@@ -270,7 +270,65 @@ def _fdr_significant_voxels(train_data, train_pred, alpha=0.05,
     info['r2_threshold'] = float(threshold)
     info['n_kept'] = int(len(keep))
     info['fallback'] = bool(fallback)
+    info['r2'] = r2.astype(np.float32)
     return np.sort(keep), info
+
+
+def _save_r2_mixture_diagnostic(fold_results, output_dir, subject,
+                                 stim_range, alpha=0.05):
+    """Multi-panel PDF: rows = methods, cols = folds. Each panel shows
+    the training R² histogram + the fitted logit-Gaussian mixture +
+    FDR threshold for that (fold, method).
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from braincoder.utils.stats import plot_r2_mixture
+
+    methods = ['classical', 'ml', 'bayes']
+    n_folds = len(fold_results)
+    if n_folds == 0:
+        return
+    fig, axes = plt.subplots(
+        len(methods), n_folds,
+        figsize=(2.8 * n_folds, 2.4 * len(methods)),
+        squeeze=False)
+    for i, method in enumerate(methods):
+        for j, r in enumerate(fold_results):
+            ax = axes[i, j]
+            d = r['decoding'].get(method, {})
+            info = d.get('fdr_info', {}) or {}
+            r2 = info.get('r2')
+            title = (f'{method} | s{r["session"]}-r{r["run2"]}'
+                      if i == 0 else f's{r["session"]}-r{r["run2"]}')
+            if r2 is None or 'signal_mu' not in info or info.get('fallback'):
+                ax.text(0.5, 0.5, info.get('reason',
+                        'fallback' if info.get('fallback') else 'no fit'),
+                        transform=ax.transAxes, ha='center', va='center',
+                        fontsize=8)
+                ax.set_title(title, fontsize=8)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                continue
+            plot_r2_mixture(info, r2=r2, alpha=alpha, ax=ax, title=title)
+            ax.title.set_size(8)
+            if j > 0:
+                ax.set_ylabel('')
+            if i < len(methods) - 1:
+                ax.set_xlabel('')
+            ax.legend_.remove() if ax.get_legend() else None
+            if j == 0:
+                ax.set_ylabel(f'{method}\nDensity', fontsize=9)
+
+    fig.suptitle(f'sub-{subject} range={stim_range}: '
+                  f'logit-Gaussian R² mixture per fold (α={alpha})',
+                  fontsize=11)
+    fig.tight_layout(rect=[0, 0, 1, 0.97])
+    fn = op.join(output_dir,
+                 f'sub-{subject}_range-{stim_range}_desc-r2_mixture.pdf')
+    fig.savefig(fn, dpi=120)
+    plt.close(fig)
+    return fn
 
 
 def _decode_test_trials(params, train_data, train_par, test_data,
@@ -537,6 +595,16 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
     summary = cvr2_long.groupby('method')['cvr2'].agg(['mean', 'median'])
     print(f'\n[stim_range={stim_range}] CV R² summary:')
     print(summary.to_string())
+
+    try:
+        pdf_path = _save_r2_mixture_diagnostic(
+            fold_results, output_dir, subject, stim_range)
+        if pdf_path:
+            print(f'Wrote R² mixture diagnostic: {pdf_path}')
+    except Exception as e:
+        # Plotting is a nice-to-have; never let it crash the fit job.
+        print(f'WARNING: failed to write R² mixture diagnostic: {e!r}')
+
     return cvr2_long
 
 
