@@ -27,7 +27,10 @@ exec > "$LOGFILE" 2>&1
 
 # Direct path to env binary — avoids `conda run` buffering, no module load.
 export PYTHONUNBUFFERED=1
-PYTHON=$HOME/data/conda/envs/neural_priors3/bin/python
+# Dedicated env for this project — uses braincoder from ~/git/braincoder_main
+# (pinned to main), so it can't be disturbed by branch switches in the
+# active ~/git/braincoder checkout used by other projects.
+PYTHON=$HOME/data/conda/envs/neural_priors_gp/bin/python
 
 $PYTHON -u $HOME/git/neural_priors/neural_priors/encoding_model/fit_gp_prior.py \
     $PARTICIPANT_LABEL \
