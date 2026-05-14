@@ -213,6 +213,7 @@ def fig_headline_r(decoding, out_path):
                                          connectionstyle='arc3,rad=0.2',
                                          color='0.4', lw=0.5))
 
+            ax.set_xticks(range(len(METHOD_ORDER)))
             ax.set_xticklabels([METHOD_NICE[m] for m in METHOD_ORDER])
             ax.set_xlabel('')
             if c_idx == 0:
@@ -272,6 +273,7 @@ def fig_medae(decoding, out_path):
             if paper is not None:
                 ax.axhline(paper, color='0.4', ls='--', lw=0.8, zorder=0)
 
+            ax.set_xticks(range(len(METHOD_ORDER)))
             ax.set_xticklabels([METHOD_NICE[m] for m in METHOD_ORDER])
             ax.set_xlabel('')
             if c_idx == 0:
