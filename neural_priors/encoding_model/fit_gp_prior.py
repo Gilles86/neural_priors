@@ -224,152 +224,50 @@ def fit_fold_bayes(model, train_data, train_par, distance_matrix,
             fitter.map_sigma)
 
 
-def _moment_match_beta(weights, x):
-    w_sum = weights.sum()
-    if w_sum < 1e-9:
-        return 1.0, 1.0
-    mu = (weights * x).sum() / w_sum
-    var = (weights * (x - mu) ** 2).sum() / w_sum
-    if var <= 1e-9 or mu <= 0 or mu >= 1:
-        return 1.0, 1.0
-    nu = mu * (1 - mu) / var - 1
-    if nu <= 0:
-        return 1.0, 1.0
-    return max(0.5, mu * nu), max(0.5, (1 - mu) * nu)
-
-
-def _beta_mixture_em(x, max_iter=400, tol=1e-6, restarts=12):
-    """EM fit of a 2-component Beta mixture to R² values in (0, 1).
-
-    Lifted from ``retinonumeral.analyses._beta_mixture`` (which was in
-    turn adapted from ``retsupp.modeling.compute_r2_mixture``). The
-    fit is restarted from several seedings and the highest-likelihood
-    solution is kept.
-    """
-    from scipy.stats import beta as beta_dist
-
-    x = np.clip(np.asarray(x, dtype=np.float64), 1e-6, 1 - 1e-6)
-    rng = np.random.default_rng(0)
-    median_x = float(np.median(x))
-
-    inits = [(np.array([1.5, 2.5]), np.array([30.0, 6.0]),
-              np.array([0.8, 0.2]))]
-    lo = x[x < median_x]
-    hi = x[x > np.quantile(x, 0.90)]
-    if len(lo) > 5 and len(hi) > 5:
-        a0, b0 = _moment_match_beta(np.ones(len(lo)), lo)
-        a1, b1 = _moment_match_beta(np.ones(len(hi)), hi)
-        inits.append((np.array([a0, a1]), np.array([b0, b1]),
-                      np.array([0.9, 0.1])))
-    for _ in range(restarts - len(inits)):
-        mu0 = rng.uniform(0.002, max(0.05, median_x))
-        mu1 = rng.uniform(0.10, 0.50)
-        a = np.array([2.0, 2.0 + 4 * mu1])
-        b = np.array([(1 - mu0) / mu0 * a[0], (1 - mu1) / mu1 * a[1]])
-        inits.append((a, b, np.array([0.9, 0.1])))
-
-    best = None
-    for a_init, b_init, w_init in inits:
-        a, b, w = a_init.copy(), b_init.copy(), w_init.copy()
-        prev_ll = -np.inf
-        resp = None
-        for _ in range(max_iter):
-            log_p = np.column_stack([
-                beta_dist.logpdf(x, a[0], b[0]) + np.log(w[0] + 1e-12),
-                beta_dist.logpdf(x, a[1], b[1]) + np.log(w[1] + 1e-12),
-            ])
-            m = log_p.max(axis=1, keepdims=True)
-            log_norm = m + np.log(np.exp(log_p - m).sum(axis=1, keepdims=True))
-            ll = float(log_norm.sum())
-            resp = np.exp(log_p - log_norm)
-            n_k = resp.sum(axis=0)
-            w_new = np.clip(n_k / len(x), 0.02, 0.98)
-            w = w_new / w_new.sum()
-            for k in range(2):
-                a[k], b[k] = _moment_match_beta(resp[:, k], x)
-            means = a / (a + b)
-            noise_idx = int(np.argmin(means))
-            if means[noise_idx] > median_x and (x < median_x).any():
-                a[noise_idx], b[noise_idx] = _moment_match_beta(
-                    np.ones((x < median_x).sum()), x[x < median_x])
-            if abs(ll - prev_ll) < tol:
-                break
-            prev_ll = ll
-        means = a / (a + b)
-        if abs(means[0] - means[1]) < 0.01:
-            continue
-        if best is None or ll > best['ll']:
-            best = {'a': a.copy(), 'b': b.copy(), 'w': w.copy(),
-                    'resp': resp.copy(), 'll': ll}
-    if best is None:
-        # Degenerate fallback — every restart collapsed.
-        a = np.array([2.0, 4.0]); b = np.array([50.0, 10.0])
-        w = np.array([0.8, 0.2])
-        log_p = np.column_stack([
-            beta_dist.logpdf(x, a[0], b[0]) + np.log(w[0]),
-            beta_dist.logpdf(x, a[1], b[1]) + np.log(w[1])])
-        log_p -= log_p.max(axis=1, keepdims=True)
-        p = np.exp(log_p); resp = p / p.sum(axis=1, keepdims=True)
-        best = {'a': a, 'b': b, 'w': w, 'resp': resp, 'll': -np.inf}
-    return best
-
-
-def _fit_p_signal(r2):
-    """Per-voxel P(signal | R²) from a 2-Beta mixture, plus a fit summary."""
-    r2 = np.asarray(r2, dtype=float)
-    out = np.full_like(r2, np.nan, dtype=np.float32)
-    usable = np.isfinite(r2) & (r2 > 0) & (r2 < 0.99)
-    if usable.sum() < 50:
-        return out, {'reason': f'n_voxels={int(usable.sum())} too small'}
-    fit = _beta_mixture_em(r2[usable])
-    means = fit['a'] / (fit['a'] + fit['b'])
-    sig_idx = int(np.argmax(means))
-    out[usable] = fit['resp'][:, sig_idx].astype(np.float32)
-    summary = {
-        'signal_alpha': float(fit['a'][sig_idx]),
-        'signal_beta':  float(fit['b'][sig_idx]),
-        'noise_alpha':  float(fit['a'][1 - sig_idx]),
-        'noise_beta':   float(fit['b'][1 - sig_idx]),
-        'signal_weight': float(fit['w'][sig_idx]),
-        'noise_weight':  float(fit['w'][1 - sig_idx]),
-        'signal_mean':   float(means[sig_idx]),
-        'noise_mean':    float(means[1 - sig_idx]),
-        'log_likelihood': float(fit['ll']),
-        'n_voxels': int(usable.sum()),
-    }
-    return out, summary
-
-
-def _fdr_significant_voxels(train_data, train_pred, p_thresh=0.95,
+def _fdr_significant_voxels(train_data, train_pred, alpha=0.05,
                              min_voxels=10):
-    """Voxels with posterior P(signal | R²) > p_thresh, via 2-Beta mixture.
+    """Voxels passing a tail-FDR threshold from a 2-Gaussian mixture on
+    logit(R²), via :func:`braincoder.utils.stats.fit_r2_mixture`.
 
-    Empirical-Bayes (local) FDR — adapts to whatever the actual null
-    distribution of R² looks like for these data (which for fMRI single-
-    trial GLM betas is *not* the parametric F-null). Falls back to top
-    ``min_voxels`` by R² if the mixture passes fewer than that, so a
-    degenerate fold doesn't produce an empty selection.
+    Empirical-Bayes FDR — the noise and signal components are learned
+    from this fold's R² distribution, not assumed to follow the
+    parametric F-null. The threshold is the smallest R² at which the
+    tail false-discovery rate is ≤ ``alpha``. Falls back to top
+    ``min_voxels`` by R² if the fit is degenerate or the threshold is
+    out of range.
 
     Returns
     -------
     keep : 1-D int array of voxel indices.
-    info : dict with mixture summary + actual threshold used.
+    info : dict with mixture summary + actual R² threshold + fallback flag.
     """
+    from braincoder.utils.stats import fit_r2_mixture, r2_fdr_threshold
+
     train_data = np.asarray(train_data, dtype=np.float64)
     train_pred = np.asarray(train_pred, dtype=np.float64)
     ss_res = np.sum((train_data - train_pred) ** 2, axis=0)
     ss_tot = np.sum(
         (train_data - train_data.mean(axis=0, keepdims=True)) ** 2, axis=0)
     r2 = 1.0 - ss_res / np.maximum(ss_tot, 1e-12)
+    r2_safe = np.nan_to_num(r2, nan=-np.inf)
 
-    p_signal, summary = _fit_p_signal(r2)
-    keep = np.where(np.nan_to_num(p_signal) > p_thresh)[0]
+    fit = None
+    threshold = float('inf')
+    try:
+        fit = fit_r2_mixture(r2)
+        threshold = r2_fdr_threshold(fit, alpha=alpha)
+    except ValueError:
+        pass  # too few voxels — falls through to top-N
+
+    keep = np.where(np.isfinite(r2) & (r2 > threshold))[0]
     fallback = False
     if len(keep) < min_voxels:
-        keep = np.argsort(-np.nan_to_num(r2))[:min_voxels]
+        keep = np.argsort(-r2_safe)[:min_voxels]
         fallback = True
-    info = dict(summary)
-    info['p_thresh'] = float(p_thresh)
+
+    info = dict(fit) if fit is not None else {}
+    info['alpha'] = float(alpha)
+    info['r2_threshold'] = float(threshold)
     info['n_kept'] = int(len(keep))
     info['fallback'] = bool(fallback)
     return np.sort(keep), info
@@ -612,8 +510,9 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                 mae=d['mae'], median_ae=d['median_ae'],
                 stim_range=stim_range,
                 fdr_fallback=info.get('fallback', False),
-                fdr_noise_mean=info.get('noise_mean', np.nan),
-                fdr_signal_mean=info.get('signal_mean', np.nan),
+                fdr_r2_threshold=info.get('r2_threshold', np.nan),
+                fdr_noise_mean_r2=info.get('noise_mean_r2', np.nan),
+                fdr_signal_mean_r2=info.get('signal_mean_r2', np.nan),
                 fdr_signal_weight=info.get('signal_weight', np.nan)))
     pd.DataFrame(dec_rows).to_csv(op.join(
         output_dir, f'sub-{subject}_range-{suffix}_desc-decoding.tsv'),
