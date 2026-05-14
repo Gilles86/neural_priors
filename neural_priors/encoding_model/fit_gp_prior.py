@@ -357,7 +357,10 @@ def _save_r2_mixture_diagnostic(fold_results, output_dir, subject,
     for i, method in enumerate(methods):
         for j, r in enumerate(fold_results):
             ax = axes[i, j]
-            d = r['decoding'].get(method, {})
+            # FDR info is the same regardless of omega-variant; grab
+            # whichever exists (plain is always present).
+            d = r['decoding'].get((method, 'plain'),
+                                   r['decoding'].get(method, {}))
             info = d.get('fdr_info', {}) or {}
             r2 = info.get('r2')
             title = (f'{method} | s{r["session"]}-r{r["run2"]}'
@@ -393,20 +396,23 @@ def _save_r2_mixture_diagnostic(fold_results, output_dir, subject,
 
 
 def _decode_test_trials(params, train_data, train_par, test_data,
-                         sig_voxels, stim_grid, max_resid_iter=2000):
-    """Posterior-mean decode test trials using braincoder's standard
-    Student-t residual noise model + ``get_stimulus_pdf``.
+                         sig_voxels, stim_grid, max_resid_iter=2000,
+                         distance_matrix=None):
+    """Posterior-mean decode test trials using braincoder's Student-t
+    residual noise model + ``get_stimulus_pdf``.
 
-    Pipeline (matches ``neural_priors/encoding_model/decode.py`` and
-    ``tms_risk/encoding_model/decode_select_voxels_cv.py``):
+    Pipeline:
 
       1. Build a fresh ``LogGaussianPRF`` on the FDR-significant voxels
          with the method's fitted parameters baked in.
       2. ``init_pseudoWWT(stim_grid, params)`` precomputes the
          basis-weight matrix the residual fitter needs.
       3. ``ResidualFitter`` fits a multivariate Student-t noise model
-         (full covariance ``omega`` and degrees of freedom ``dof``)
-         on the training residuals.
+         on the training residuals. When ``distance_matrix`` is given,
+         Ω uses braincoder's distance-modulated form
+             Ω = ρ (α exp(-β·D) ττᵀ + (1-α) ττᵀ) + (1-ρ) diag(τ²) + σ² WWᵀ
+         which exploits known spatial structure of fMRI noise and is
+         far more constrained than a free-form Ω fit from few trials.
       4. ``get_stimulus_pdf`` evaluates the un-normalized posterior over
          the numerosity grid for each test trial.
       5. Readout = posterior mean over ``stim_grid``.
@@ -429,8 +435,14 @@ def _decode_test_trials(params, train_data, train_par, test_data,
 
     residfit = ResidualFitter(m, train_data_sig, train_par,
                                parameters=sig_params)
+    # Subset the precomputed cortical-distance matrix to the selected voxels.
+    D_sig = None
+    if distance_matrix is not None:
+        D_sig = np.asarray(distance_matrix)[np.ix_(sig_voxels, sig_voxels)]
+        D_sig = D_sig.astype(np.float32)
+
     omega, dof = residfit.fit(
-        init_sigma2=0.1, method='t',
+        init_sigma2=0.1, method='t', D=D_sig,
         max_n_iterations=max_resid_iter, learning_rate=0.05,
         progressbar=False)
 
@@ -524,12 +536,17 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
         map_train_pred = model.predict(
             parameters=map_pars, paradigm=train_par.to_frame())
 
-        # --- FDR (Beta-mixture) voxel selection + posterior-mean decoding ---
+        # --- FDR voxel selection + posterior-mean decoding ---
+        # We run the decoder twice per (fold, method): once with a free-
+        # form Ω, once with the distance-modulated Ω (braincoder's
+        # _get_omega_distance — Ω = ρ (α exp(-β D) ττᵀ + (1-α) ττᵀ) +
+        # (1-ρ) diag(τ²) + σ² WWᵀ). Saved with an `omega` column so the
+        # analysis can compare them head-to-head.
         stim_grid = np.linspace(
             float(paradigm.min()), float(paradigm.max()), 201,
             dtype=np.float32)
         true_test = test_par.values.astype(np.float32)
-        decoding = {}
+        decoding = {}                       # keys: (method, omega_variant)
         decode_iter = 200 if debug else 2000
         for method, train_pred_df, fit_pars in (
                 ('classical', cls_train_pred, cls_pars),
@@ -538,30 +555,28 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
             sig, fdr_info = _fdr_significant_voxels(
                 train_data.values, train_pred_df.values,
                 brain_threshold=brain_threshold)
-            decoded = _decode_test_trials(
-                fit_pars, train_data, train_par, test_data,
-                sig, stim_grid, max_resid_iter=decode_iter)
-            if decoded is None:
-                decoding[method] = dict(n_sig=0, mae=np.nan,
-                                         median_ae=np.nan, mae_log=np.nan,
-                                         median_ae_log=np.nan, r=np.nan,
-                                         decoded=None, fdr_info=fdr_info)
-            else:
+            for omega_variant, D_arg in (('plain', None),
+                                          ('distance', D)):
+                decoded = _decode_test_trials(
+                    fit_pars, train_data, train_par, test_data,
+                    sig, stim_grid, max_resid_iter=decode_iter,
+                    distance_matrix=D_arg)
+                key = (method, omega_variant)
+                if decoded is None:
+                    decoding[key] = dict(
+                        n_sig=0, mae=np.nan, median_ae=np.nan,
+                        mae_log=np.nan, median_ae_log=np.nan, r=np.nan,
+                        decoded=None, fdr_info=fdr_info)
+                    continue
                 err = np.abs(decoded - true_test)
-                # log-space errors: numerosity stimuli are all > 0 here.
                 err_log = np.abs(np.log(np.clip(decoded, 1e-6, None))
                                   - np.log(np.clip(true_test, 1e-6, None)))
-                # Per-fold Pearson r between decoded and true. The mean of
-                # per-fold r's (computed in the analysis notebook) is the
-                # right summary — pooling all trials across folds confounds
-                # within-fold structure (range context, drift) with the
-                # decoder's actual decoding power.
                 if (np.std(decoded) < 1e-9 or np.std(true_test) < 1e-9
                         or len(decoded) < 3):
                     r_fold = float('nan')
                 else:
                     r_fold = float(np.corrcoef(decoded, true_test)[0, 1])
-                decoding[method] = dict(
+                decoding[key] = dict(
                     n_sig=int(len(sig)),
                     mae=float(np.mean(err)),
                     median_ae=float(np.median(err)),
@@ -572,15 +587,23 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                     true=true_test,
                     fdr_info=fdr_info)
 
-        def _summarize(name, cvr2, dec):
+        def _summarize(name, cvr2, dec_plain, dec_dist):
             return (f'  {name:9s}: cvR² {float(cvr2.mean()):+.3f} | '
-                    f'decode {dec["n_sig"]} vx | '
-                    f'medAE {dec["median_ae"]:.2f} (log {dec["median_ae_log"]:.3f}) | '
-                    f'r {dec["r"]:+.3f}')
+                    f'n_sig {dec_plain["n_sig"]} | '
+                    f'plain medAE {dec_plain["median_ae"]:.2f} '
+                    f'r {dec_plain["r"]:+.3f} | '
+                    f'dist medAE {dec_dist["median_ae"]:.2f} '
+                    f'r {dec_dist["r"]:+.3f}')
         print(f'  (classical train R² {cls_train_r2:.3f})')
-        print(_summarize('classical', cls_cvr2, decoding['classical']))
-        print(_summarize('ml',        ml_cvr2,  decoding['ml']))
-        print(_summarize('bayes',     map_cvr2, decoding['bayes']))
+        print(_summarize('classical', cls_cvr2,
+                         decoding[('classical', 'plain')],
+                         decoding[('classical', 'distance')]))
+        print(_summarize('ml',        ml_cvr2,
+                         decoding[('ml', 'plain')],
+                         decoding[('ml', 'distance')]))
+        print(_summarize('bayes',     map_cvr2,
+                         decoding[('bayes', 'plain')],
+                         decoding[('bayes', 'distance')]))
         for name, hp in hyperpars_dict.items():
             print(f'    prior[{name}]: l={hp["lengthscale"]:.2f} mm, '
                   f'v={hp["variance"]:.3f}, nug={hp["nugget"]:.3f}')
@@ -643,11 +666,13 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
     # with the decoder's actual decoding power.
     dec_rows = []
     for r in fold_results:
-        for method, d in r['decoding'].items():
+        for key, d in r['decoding'].items():
+            method, omega_variant = key
             info = d.get('fdr_info', {}) or {}
             dec_rows.append(dict(
                 session=r['session'], run2=r['run2'],
-                method=method, n_sig_voxels=d['n_sig'],
+                method=method, omega=omega_variant,
+                n_sig_voxels=d['n_sig'],
                 mae=d['mae'], median_ae=d['median_ae'],
                 mae_log=d.get('mae_log', np.nan),
                 median_ae_log=d.get('median_ae_log', np.nan),
@@ -665,13 +690,14 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
     # Per-trial decoded values for later scatterplots.
     trial_rows = []
     for r in fold_results:
-        for method, d in r['decoding'].items():
+        for key, d in r['decoding'].items():
+            method, omega_variant = key
             if d['decoded'] is None:
                 continue
             for tr, (dec, tru) in enumerate(zip(d['decoded'], d['true'])):
                 trial_rows.append(dict(
                     session=r['session'], run2=r['run2'],
-                    method=method, trial=tr,
+                    method=method, omega=omega_variant, trial=tr,
                     decoded=float(dec), true=float(tru),
                     stim_range=stim_range))
     pd.DataFrame(trial_rows).to_csv(op.join(
