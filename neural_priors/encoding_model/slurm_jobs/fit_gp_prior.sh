@@ -15,14 +15,20 @@ PARTICIPANT_LABEL=$(printf "%02d" $SLURM_ARRAY_TASK_ID)
 ROI=${1:-NPCr}
 EXTRA_FLAGS="${2:-}"
 
-# Tag the log file so smoothed and unsmoothed runs don't overwrite.
+# Tag the log file so different runs don't overwrite. Encodes the
+# smoothing flavor and the experiment --tag, if either is given.
 SMOOTH_TAG=""
 if [[ "$EXTRA_FLAGS" == *"--smoothed"* ]]; then
     SMOOTH_TAG=".smoothed"
 fi
-LOGFILE="$HOME/logs/nprf_gp_sub-${PARTICIPANT_LABEL}_roi-${ROI}${SMOOTH_TAG}.txt"
+# Extract --tag <value> from EXTRA_FLAGS, default to 'default'.
+EXP_TAG="default"
+if [[ "$EXTRA_FLAGS" =~ --tag[[:space:]]+([^[:space:]]+) ]]; then
+    EXP_TAG="${BASH_REMATCH[1]}"
+fi
+LOGFILE="$HOME/logs/nprf_gp_sub-${PARTICIPANT_LABEL}_roi-${ROI}${SMOOTH_TAG}.${EXP_TAG}.txt"
 mkdir -p "$(dirname "$LOGFILE")"
-scontrol update JobId=$SLURM_JOB_ID JobName="nprf_gp_${ROI}${SMOOTH_TAG}_s${PARTICIPANT_LABEL}"
+scontrol update JobId=$SLURM_JOB_ID JobName="nprf_gp_${ROI}${SMOOTH_TAG}.${EXP_TAG}_s${PARTICIPANT_LABEL}"
 exec > "$LOGFILE" 2>&1
 
 # Direct path to env binary — avoids `conda run` buffering, no module load.

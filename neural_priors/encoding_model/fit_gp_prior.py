@@ -38,9 +38,12 @@ Notes
 """
 
 import argparse
+import datetime
+import json
 import os
 import os.path as op
 import pickle
+import subprocess
 
 import numpy as np
 import pandas as pd
@@ -211,15 +214,23 @@ def _build_priors(distance_matrix, classical_pars):
 
 
 def fit_fold_bayes(model, train_data, train_par, distance_matrix,
-                   classical_pars, max_iter, progressbar):
-    """Stage-2+3 fit with GP priors on every parameter in PRIOR_PARAMS."""
+                   classical_pars, max_iter, progressbar,
+                   shared_lengthscale=False):
+    """Stage-2+3 fit with GP priors on every parameter in PRIOR_PARAMS.
+
+    ``shared_lengthscale``: tie all four priors' lengthscales to a
+    single shared Variable and do joint hyperparameter MLE. Same
+    spatial scale across mu/sd/amplitude/baseline; per-prior variance
+    and nugget stay independent.
+    """
     priors = _build_priors(distance_matrix, classical_pars)
     fitter = BayesianParameterFitter(
         model, train_data, train_par, priors=priors)
     # Reuse the classical fold's parameters as the stage-1 result and
     # skip straight to stages 2 and 3.
     fitter.classical_estimates = classical_pars
-    fitter.fit_hyperparameters(progressbar=progressbar)
+    fitter.fit_hyperparameters(progressbar=progressbar,
+                                shared_lengthscale=shared_lengthscale)
     fitter.fit_map(max_n_iterations=max_iter, progressbar=progressbar)
     return (fitter.map_estimates,
             {name: priors[name].hyperparameters for name in PRIOR_PARAMS},
@@ -490,7 +501,7 @@ def fit_fold_bayes_no_prior(model, train_data, train_par, init_pars,
 
 def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                     max_iter, debug, output_dir, smoothed=False,
-                    brain_threshold=None):
+                    brain_threshold=None, shared_lengthscale=False):
     """Fit classical + bayes across all folds, for a single stimulus range."""
     paradigm, data, _, _, _ = load_data(
         subject, bids_folder, roi=roi, stim_range=stim_range,
@@ -540,7 +551,8 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
         # 3. Bayesian fit with GP priors on every parameter
         map_pars, hyperpars_dict, sigma = fit_fold_bayes(
             model, train_data, train_par, D, cls_pars,
-            max_iter=max_iter, progressbar=False)
+            max_iter=max_iter, progressbar=False,
+            shared_lengthscale=shared_lengthscale)
         map_pred = model.predict(
             parameters=map_pars, paradigm=test_par.to_frame())
         map_cvr2 = get_rsq(test_data, map_pred)
@@ -731,11 +743,57 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
     return cvr2_long
 
 
+def _git_sha(path):
+    """Return short git SHA at ``path``, or ``None`` if not a repo."""
+    try:
+        out = subprocess.check_output(
+            ['git', '-C', path, 'rev-parse', '--short', 'HEAD'],
+            stderr=subprocess.DEVNULL).decode().strip()
+        return out or None
+    except Exception:
+        return None
+
+
+def _write_manifest(output_dir, subject, manifest):
+    """Write a per-subject manifest JSON capturing the exact run config.
+
+    Includes git SHAs (neural_priors + braincoder), CLI args, voxel-
+    selection rule, prior coupling, and timestamps. Future-you (or
+    a reviewer) can stand on any TSV and reproduce or audit it.
+    """
+    fn = op.join(output_dir, f'sub-{subject}_desc-manifest.json')
+    with open(fn, 'w') as f:
+        json.dump(manifest, f, indent=2, default=str)
+    return fn
+
+
 def main(subject, bids_folder, roi='NPCr', stim_range='both',
          smoothed=False, max_iter=2000, debug=False, output_dir=None,
-         wb_model_label=15, use_brain_threshold=False):
+         wb_model_label=15, use_brain_threshold=False,
+         tag='default', shared_lengthscale=False):
     if debug:
         max_iter = 200
+
+    run_started = datetime.datetime.utcnow().isoformat() + 'Z'
+    import braincoder as _bc
+    manifest = {
+        'subject':           subject,
+        'roi':               roi,
+        'stim_range':        stim_range,
+        'smoothed':          bool(smoothed),
+        'tag':               tag,
+        'shared_lengthscale': bool(shared_lengthscale),
+        'use_brain_threshold': bool(use_brain_threshold),
+        'wb_model_label':    int(wb_model_label),
+        'max_iter':          int(max_iter),
+        'debug':             bool(debug),
+        'prior_params':      list(PRIOR_PARAMS),
+        'voxel_selection':   ('whole_brain_p>=0.5' if use_brain_threshold
+                              else 'per_fold_p_signal>=0.5'),
+        'git_neural_priors': _git_sha(op.dirname(op.abspath(__file__))),
+        'git_braincoder':    _git_sha(op.dirname(_bc.__file__)),
+        'run_started':       run_started,
+    }
 
     # FDR voxel-selection threshold.
     #
@@ -785,10 +843,15 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
         key = f'gp_prior_roi-{roi}'
         if smoothed:
             key += '.smoothed'
+        # Experiment tag is its own directory level so the same
+        # (roi, smoothing) combination can host multiple side-by-side
+        # experiments. Glob-friendly: `exp-*` lists all experiments.
         output_dir = op.join(
             bids_folder, 'derivatives', 'encoding_models',
-            key, f'sub-{subject}', 'func')
+            key, f'exp-{tag}', f'sub-{subject}', 'func')
     os.makedirs(output_dir, exist_ok=True)
+    manifest['output_dir'] = output_dir
+    _write_manifest(output_dir, subject, manifest)
     np.save(op.join(output_dir, f'sub-{subject}_desc-distance.npy'), D)
     np.save(op.join(output_dir, f'sub-{subject}_desc-vertex_idx.npy'),
              vtx_idx)
@@ -811,11 +874,17 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
         all_cvr2.append(_run_one_range(
             subject, bids_folder, roi, r, D, sub, masker,
             max_iter, debug, output_dir, smoothed=smoothed,
-            brain_threshold=brain_threshold))
+            brain_threshold=brain_threshold,
+            shared_lengthscale=shared_lengthscale))
 
     pd.concat(all_cvr2, ignore_index=True).to_csv(
         op.join(output_dir, f'sub-{subject}_desc-cvr2_all.tsv'),
         sep='\t', index=False)
+
+    # Update manifest with finish time + list of TSVs that landed.
+    manifest['run_finished'] = datetime.datetime.utcnow().isoformat() + 'Z'
+    manifest['ranges_completed'] = ranges
+    _write_manifest(output_dir, subject, manifest)
     print(f'\nWrote outputs to {output_dir}')
 
 
@@ -843,6 +912,19 @@ if __name__ == '__main__':
                              'set the FDR voxel-selection threshold. Default '
                              'is per-fold NPC-local mixture (strict within-'
                              'fold CV; recommended).')
+    parser.add_argument('--tag', default='default',
+                        help='Experiment tag. Outputs land under '
+                             'gp_prior_roi-{ROI}[.smoothed]/exp-{tag}/. '
+                             'Each subject gets a _desc-manifest.json '
+                             'recording CLI args, git SHAs, and run '
+                             'timestamps. Use distinct tags for variants '
+                             'you want to compare side-by-side.')
+    parser.add_argument('--shared_lengthscale', action='store_true',
+                        help='Tie GP-prior lengthscales across all four '
+                             'parameters (mu, sd, amplitude, baseline) to '
+                             'one shared value via joint MLE. Use when you '
+                             'want a single "cortical topographic scale" '
+                             'rather than per-parameter scales.')
     parser.add_argument('--max_iter', type=int, default=2000)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--output_dir', default=None)
@@ -852,5 +934,7 @@ if __name__ == '__main__':
          smoothed=args.smoothed,
          wb_model_label=args.wb_model_label,
          use_brain_threshold=args.use_brain_threshold,
+         tag=args.tag,
+         shared_lengthscale=args.shared_lengthscale,
          max_iter=args.max_iter,
          debug=args.debug, output_dir=args.output_dir)
