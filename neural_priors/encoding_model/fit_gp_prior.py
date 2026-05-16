@@ -226,10 +226,12 @@ def fit_fold_bayes(model, train_data, train_par, distance_matrix,
             fitter.map_sigma)
 
 
-def fit_brain_r2_threshold(subject, bids_folder, alpha=0.05,
+def fit_brain_r2_threshold(subject, bids_folder, p_threshold=0.5,
                              wb_model_label=15):
     """Fit logit-Gaussian R² mixture on whole-brain cvR² from the
-    existing neural_priors pipeline and return the α-FDR threshold.
+    existing neural_priors pipeline and return the R² value at which
+    P(signal | r²) first crosses ``p_threshold`` (default 0.5 = Bayes
+    classification boundary between signal and noise components).
 
     Whole-brain cvR² gives a much cleaner empirical-null distribution
     than NPC alone (lots of genuinely-noise voxels in white matter,
@@ -243,7 +245,7 @@ def fit_brain_r2_threshold(subject, bids_folder, alpha=0.05,
     our LogGaussianPRF but the bimodal *shape* of the noise/signal
     distribution is what matters for the threshold.
     """
-    from braincoder.utils.stats import fit_r2_mixture, r2_fdr_threshold
+    from braincoder.utils.stats import fit_r2_mixture, r2_p_signal_threshold
     from nilearn import image
 
     key = f'model{wb_model_label}.cv.whole_brain.smoothed'
@@ -258,21 +260,24 @@ def fit_brain_r2_threshold(subject, bids_folder, alpha=0.05,
     cvr2 = cvr2[np.isfinite(cvr2)]
     try:
         fit = fit_r2_mixture(cvr2)
-        threshold = r2_fdr_threshold(fit, alpha=alpha)
+        threshold = r2_p_signal_threshold(fit, p=p_threshold)
         print(f'Whole-brain mixture: signal R² mean {fit["signal_mean_r2"]:.3f}, '
               f'noise R² mean {fit["noise_mean_r2"]:.3f}, '
               f'signal weight {fit["signal_weight"]:.2f}, '
-              f'α={alpha} R² threshold {threshold:.4f} (source: {key})')
+              f'p_signal≥{p_threshold} R² threshold {threshold:.4f} '
+              f'(source: {key})')
         return threshold, fit
     except Exception as e:
         print(f'WARNING: whole-brain mixture fit failed: {e!r}')
         return None, None
 
 
-def _fdr_significant_voxels(train_data, train_pred, alpha=0.05,
+def _fdr_significant_voxels(train_data, train_pred, p_threshold=0.5,
                              min_voxels=100, brain_threshold=None):
-    """Voxels passing a tail-FDR threshold from a 2-Gaussian mixture on
-    logit(R²), via :func:`braincoder.utils.stats.fit_r2_mixture`.
+    """Voxels passing ``P(signal | r²) ≥ p_threshold`` under a
+    2-Gaussian mixture on logit(R²), via
+    :func:`braincoder.utils.stats.fit_r2_mixture` +
+    :func:`braincoder.utils.stats.r2_posterior_signal`.
 
     Two modes:
 
@@ -281,22 +286,23 @@ def _fdr_significant_voxels(train_data, train_pred, alpha=0.05,
       :func:`fit_brain_r2_threshold`). The local NPC mixture is *not*
       fitted; we just compare each voxel's training R² to the
       pre-computed threshold.
-    * ``brain_threshold`` is ``None``: fit a per-fold local mixture on
-      the NPC training R²s and use its α-FDR threshold. Falls back to
-      top ``min_voxels`` by R² if the fit is degenerate.
+    * ``brain_threshold`` is ``None`` (default): fit a per-fold local
+      mixture on the NPC training R²s, compute each voxel's
+      P(signal | r²), and keep those with ≥ p_threshold (default 0.5
+      = "more likely signal than noise"). Falls back to top
+      ``min_voxels`` by R² if the fit is degenerate.
 
     The local fallback default of 100 is calibrated for noisy
-    single-trial GLM data where the *NPC-only* mixture often can't
-    surface a clean signal component. With the whole-brain threshold,
-    the mixture has a much cleaner empirical-null shape, so the
-    fallback should rarely trigger.
+    single-trial GLM data on small ROIs where the mixture can be too
+    degenerate to find a usable threshold.
 
     Returns
     -------
     keep : 1-D int array of voxel indices.
     info : dict with mixture summary + actual R² threshold + fallback flag.
     """
-    from braincoder.utils.stats import fit_r2_mixture, r2_fdr_threshold
+    from braincoder.utils.stats import (
+        fit_r2_mixture, r2_posterior_signal, r2_p_signal_threshold)
 
     train_data = np.asarray(train_data, dtype=np.float64)
     train_pred = np.asarray(train_pred, dtype=np.float64)
@@ -307,31 +313,36 @@ def _fdr_significant_voxels(train_data, train_pred, alpha=0.05,
     r2_safe = np.nan_to_num(r2, nan=-np.inf)
 
     fit = None
+    p_signal = None
     if brain_threshold is not None and np.isfinite(brain_threshold):
         threshold = float(brain_threshold)
         source = 'whole_brain'
+        keep = np.where(np.isfinite(r2) & (r2 > threshold))[0]
     else:
         threshold = float('inf')
         source = 'npc_local'
         try:
             fit = fit_r2_mixture(r2)
-            threshold = r2_fdr_threshold(fit, alpha=alpha)
+            threshold = r2_p_signal_threshold(fit, p=p_threshold)
+            p_signal = r2_posterior_signal(r2, fit)
+            keep = np.where(np.isfinite(r2) & (p_signal >= p_threshold))[0]
         except ValueError:
-            pass  # too few voxels — falls through to top-N
+            keep = np.where(np.isfinite(r2) & (r2 > threshold))[0]
 
-    keep = np.where(np.isfinite(r2) & (r2 > threshold))[0]
     fallback = False
     if len(keep) < min_voxels:
         keep = np.argsort(-r2_safe)[:min_voxels]
         fallback = True
 
     info = dict(fit) if fit is not None else {}
-    info['alpha'] = float(alpha)
+    info['p_threshold'] = float(p_threshold)
     info['r2_threshold'] = float(threshold)
     info['n_kept'] = int(len(keep))
     info['fallback'] = bool(fallback)
     info['source'] = source
     info['r2'] = r2.astype(np.float32)
+    if p_signal is not None:
+        info['p_signal'] = p_signal.astype(np.float32)
     return np.sort(keep), info
 
 
@@ -742,11 +753,12 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
     # information leak.
     if use_brain_threshold:
         brain_threshold, brain_fit = fit_brain_r2_threshold(
-            subject, bids_folder, alpha=0.05, wb_model_label=wb_model_label)
+            subject, bids_folder, p_threshold=0.5,
+            wb_model_label=wb_model_label)
     else:
         brain_threshold, brain_fit = None, None
         print('Voxel-selection: per-fold NPC R² mixture '
-              '(--brain_threshold to use whole-brain instead)')
+              '(p_signal≥0.5; --brain_threshold to use whole-brain instead)')
 
     # Load once (data, mask, voxel centroids) — distance matrix is shared
     # across ranges because the voxel set doesn't depend on the paradigm.
@@ -785,7 +797,7 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
     # output (one record per subject).
     if brain_fit is not None:
         wb_record = dict(brain_fit)
-        wb_record['alpha'] = 0.05
+        wb_record['p_threshold'] = 0.5
         wb_record['r2_threshold'] = float(brain_threshold)
         wb_record['source'] = f'model{wb_model_label}.cv.whole_brain.smoothed'
         pd.DataFrame([wb_record]).to_csv(
