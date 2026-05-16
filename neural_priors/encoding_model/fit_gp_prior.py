@@ -722,19 +722,31 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
 
 def main(subject, bids_folder, roi='NPCr', stim_range='both',
          smoothed=False, max_iter=2000, debug=False, output_dir=None,
-         wb_model_label=15):
+         wb_model_label=15, use_brain_threshold=False):
     if debug:
         max_iter = 200
 
-    # Whole-brain R² mixture → empirical-null FDR threshold, computed
-    # once per subject. Saved derivatives from a related production
-    # model (default model 15) are much cheaper than fitting our own
-    # whole-brain pRFs and give a cleaner bimodal R² distribution than
-    # NPC alone, so the mixture finds a real signal/noise split. If the
-    # whole-brain output isn't present, we fall back to per-fold NPC
-    # mixture inside _fdr_significant_voxels.
-    brain_threshold, brain_fit = fit_brain_r2_threshold(
-        subject, bids_folder, alpha=0.05, wb_model_label=wb_model_label)
+    # FDR voxel-selection threshold.
+    #
+    # Default (``use_brain_threshold=False``): per-fold NPC-local R²
+    # mixture inside ``_fdr_significant_voxels`` — strictly within-fold
+    # cross-validation, no subject-level information leak from outside
+    # the training set.
+    #
+    # ``--brain_threshold`` flag: also fit a whole-brain R² mixture on
+    # the existing cross-validated model{wb_model_label} cvR² map and
+    # apply that single threshold to every fold's training R². Cleaner
+    # bimodal mixture (lots of obvious-noise voxels in white matter /
+    # ventricles), but the threshold is derived from data outside the
+    # training set of any one fold, which is a subject-level
+    # information leak.
+    if use_brain_threshold:
+        brain_threshold, brain_fit = fit_brain_r2_threshold(
+            subject, bids_folder, alpha=0.05, wb_model_label=wb_model_label)
+    else:
+        brain_threshold, brain_fit = None, None
+        print('Voxel-selection: per-fold NPC R² mixture '
+              '(--brain_threshold to use whole-brain instead)')
 
     # Load once (data, mask, voxel centroids) — distance matrix is shared
     # across ranges because the voxel set doesn't depend on the paradigm.
@@ -811,7 +823,14 @@ if __name__ == '__main__':
     parser.add_argument('--wb_model_label', type=int, default=15,
                         help='Which neural_priors whole-brain model to '
                              'source cvR² from for the FDR mixture '
-                             '(default 15, LinearScalingModel).')
+                             '(default 15, LinearScalingModel). Only used '
+                             'if --brain_threshold is passed.')
+    parser.add_argument('--brain_threshold', dest='use_brain_threshold',
+                        action='store_true',
+                        help='Use subject-level whole-brain R² mixture to '
+                             'set the FDR voxel-selection threshold. Default '
+                             'is per-fold NPC-local mixture (strict within-'
+                             'fold CV; recommended).')
     parser.add_argument('--max_iter', type=int, default=2000)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--output_dir', default=None)
@@ -820,5 +839,6 @@ if __name__ == '__main__':
          roi=args.roi, stim_range=args.stim_range,
          smoothed=args.smoothed,
          wb_model_label=args.wb_model_label,
+         use_brain_threshold=args.use_brain_threshold,
          max_iter=args.max_iter,
          debug=args.debug, output_dir=args.output_dir)
