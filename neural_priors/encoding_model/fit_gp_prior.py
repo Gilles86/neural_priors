@@ -233,28 +233,37 @@ def _build_priors(distance_matrix, classical_pars, prior_params):
 def fit_fold_bayes(model, train_data, train_par, distance_matrix,
                    classical_pars, max_iter, progressbar,
                    shared_lengthscale=False,
-                   prior_params=None):
+                   prior_params=None,
+                   joint_hyperparams=False):
     """Stage-2+3 fit with GP priors on the requested PRF parameters.
 
     ``prior_params``: which parameters get a GP prior. Defaults to
     ``DEFAULT_PRIOR_PARAMS`` (all four — mu, sd, amplitude, baseline).
     Use ``['mu']`` for the paper-faithful single-parameter variant.
 
-    ``shared_lengthscale``: tie all priors' lengthscales to a single
-    shared Variable and do joint hyperparameter MLE. No-op when only
-    one prior is active.
+    ``shared_lengthscale``: tie all priors' lengthscales to one shared
+    Variable.
+
+    ``joint_hyperparams``: type-II MAP — skip stage 2 (no MLE on noisy
+    classical estimates) and co-optimize hyperparameters with model
+    parameters in stage 3. The prior's ``-½ log|K(ψ)|`` term provides
+    automatic regularization on ψ, sidestepping stage-2's
+    over-smoothing bias.
     """
     if prior_params is None:
         prior_params = list(DEFAULT_PRIOR_PARAMS)
     priors = _build_priors(distance_matrix, classical_pars, prior_params)
     fitter = BayesianParameterFitter(
         model, train_data, train_par, priors=priors)
-    # Reuse the classical fold's parameters as the stage-1 result and
-    # skip straight to stages 2 and 3.
     fitter.classical_estimates = classical_pars
-    fitter.fit_hyperparameters(progressbar=progressbar,
-                                shared_lengthscale=shared_lengthscale)
-    fitter.fit_map(max_n_iterations=max_iter, progressbar=progressbar)
+    if joint_hyperparams:
+        if shared_lengthscale:
+            fitter.tie_lengthscales()
+    else:
+        fitter.fit_hyperparameters(progressbar=progressbar,
+                                    shared_lengthscale=shared_lengthscale)
+    fitter.fit_map(max_n_iterations=max_iter, progressbar=progressbar,
+                    joint_hyperparams=joint_hyperparams)
     return (fitter.map_estimates,
             {name: priors[name].hyperparameters for name in prior_params},
             fitter.map_sigma)
@@ -525,7 +534,7 @@ def fit_fold_bayes_no_prior(model, train_data, train_par, init_pars,
 def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                     max_iter, debug, output_dir, smoothed=False,
                     brain_threshold=None, shared_lengthscale=False,
-                    prior_params=None):
+                    prior_params=None, joint_hyperparams=False):
     """Fit classical + bayes across all folds, for a single stimulus range."""
     paradigm, data, _, _, _ = load_data(
         subject, bids_folder, roi=roi, stim_range=stim_range,
@@ -577,7 +586,8 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
             model, train_data, train_par, D, cls_pars,
             max_iter=max_iter, progressbar=False,
             shared_lengthscale=shared_lengthscale,
-            prior_params=prior_params)
+            prior_params=prior_params,
+            joint_hyperparams=joint_hyperparams)
         map_pred = model.predict(
             parameters=map_pars, paradigm=test_par.to_frame())
         map_cvr2 = get_rsq(test_data, map_pred)
@@ -796,7 +806,7 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
          smoothed=False, max_iter=2000, debug=False, output_dir=None,
          wb_model_label=15, use_brain_threshold=False,
          tag='default', shared_lengthscale=False,
-         prior_params=None):
+         prior_params=None, joint_hyperparams=False):
     if debug:
         max_iter = 200
     if prior_params is None:
@@ -816,6 +826,7 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
         'smoothed':          bool(smoothed),
         'tag':               tag,
         'shared_lengthscale': bool(shared_lengthscale),
+        'joint_hyperparams': bool(joint_hyperparams),
         'use_brain_threshold': bool(use_brain_threshold),
         'wb_model_label':    int(wb_model_label),
         'max_iter':          int(max_iter),
@@ -909,7 +920,8 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
             max_iter, debug, output_dir, smoothed=smoothed,
             brain_threshold=brain_threshold,
             shared_lengthscale=shared_lengthscale,
-            prior_params=prior_params))
+            prior_params=prior_params,
+            joint_hyperparams=joint_hyperparams))
 
     pd.concat(all_cvr2, ignore_index=True).to_csv(
         op.join(output_dir, f'sub-{subject}_desc-cvr2_all.tsv'),
@@ -969,6 +981,12 @@ if __name__ == '__main__':
                              '--prior_params mu. Empty list (passable via '
                              "'--prior_params' with no args) gives the "
                              'no-prior ML mode.')
+    parser.add_argument('--joint_hyperparams', action='store_true',
+                        help='Type-II MAP: skip stage 2 (no MLE on noisy '
+                             'classical estimates) and co-optimize the GP '
+                             'hyperparameters with the model parameters in '
+                             'stage 3. The prior\'s -½ log|K(ψ)| term '
+                             'automatically penalizes over-smoothing of ψ.')
     parser.add_argument('--max_iter', type=int, default=2000)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--output_dir', default=None)
@@ -981,5 +999,6 @@ if __name__ == '__main__':
          tag=args.tag,
          shared_lengthscale=args.shared_lengthscale,
          prior_params=args.prior_params,
+         joint_hyperparams=args.joint_hyperparams,
          max_iter=args.max_iter,
          debug=args.debug, output_dir=args.output_dir)
