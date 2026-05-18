@@ -180,7 +180,8 @@ def load_data(subject, bids_folder, roi='NPCr', stim_range='wide',
     return paradigm, data, masker, xyz, sub
 
 
-PRIOR_PARAMS = ['mu', 'sd', 'amplitude', 'baseline']
+DEFAULT_PRIOR_PARAMS = ['mu', 'sd', 'amplitude', 'baseline']
+ALLOWED_PRIOR_PARAMS = ['mu', 'sd', 'amplitude', 'baseline']
 
 
 def fit_fold_classical(model, train_data, train_par, init_pars,
@@ -191,17 +192,33 @@ def fit_fold_classical(model, train_data, train_par, init_pars,
     return pars, float(fitter.r2.mean())
 
 
-def _build_priors(distance_matrix, classical_pars):
-    """One GP prior per regularized parameter; variance seeded from classical.
+def _build_priors(distance_matrix, classical_pars, prior_params):
+    """Build one ``GeodesicGPPrior`` per name in ``prior_params``.
 
-    Initial lengthscale defaults to ~25% of the median pairwise distance
-    so the kernel is non-degenerate from step 0 (cf. ‘RBF with l << d
-    looks like a delta function’). Adam will adjust it during stage 2.
+    Variance is seeded from each parameter's empirical variance on the
+    classical estimates (so a parameter with native scale ~30 starts
+    with a big variance and one near 0 with a small one). Initial
+    lengthscale defaults to ~25% of the median pairwise distance so
+    the kernel is non-degenerate from step 0 (cf. 'RBF with l << d
+    looks like a delta function'). Adam then adjusts l/v/n during
+    stage 2.
+
+    Caller-supplied ``prior_params`` lets us run subsets — the
+    paper-faithful ``--prior_params mu``, or the all-four default.
+    Empty list returns ``{}`` (i.e., pure ML mode with no GP prior).
     """
+    if not prior_params:
+        return {}
+    missing = [n for n in prior_params if n not in classical_pars.columns]
+    if missing:
+        raise ValueError(
+            f"prior_params {missing} not in classical_pars columns "
+            f"{list(classical_pars.columns)}")
+
     offdiag = distance_matrix[~np.eye(distance_matrix.shape[0], dtype=bool)]
     lengthscale_init = max(float(np.median(offdiag)) * 0.25, 1.0)
     priors = {}
-    for name in PRIOR_PARAMS:
+    for name in prior_params:
         v = float(np.var(classical_pars[name].values))
         v_init = max(v, 1e-4)
         nugget_init = max(v_init * 0.1, 1e-4)
@@ -215,15 +232,21 @@ def _build_priors(distance_matrix, classical_pars):
 
 def fit_fold_bayes(model, train_data, train_par, distance_matrix,
                    classical_pars, max_iter, progressbar,
-                   shared_lengthscale=False):
-    """Stage-2+3 fit with GP priors on every parameter in PRIOR_PARAMS.
+                   shared_lengthscale=False,
+                   prior_params=None):
+    """Stage-2+3 fit with GP priors on the requested PRF parameters.
 
-    ``shared_lengthscale``: tie all four priors' lengthscales to a
-    single shared Variable and do joint hyperparameter MLE. Same
-    spatial scale across mu/sd/amplitude/baseline; per-prior variance
-    and nugget stay independent.
+    ``prior_params``: which parameters get a GP prior. Defaults to
+    ``DEFAULT_PRIOR_PARAMS`` (all four — mu, sd, amplitude, baseline).
+    Use ``['mu']`` for the paper-faithful single-parameter variant.
+
+    ``shared_lengthscale``: tie all priors' lengthscales to a single
+    shared Variable and do joint hyperparameter MLE. No-op when only
+    one prior is active.
     """
-    priors = _build_priors(distance_matrix, classical_pars)
+    if prior_params is None:
+        prior_params = list(DEFAULT_PRIOR_PARAMS)
+    priors = _build_priors(distance_matrix, classical_pars, prior_params)
     fitter = BayesianParameterFitter(
         model, train_data, train_par, priors=priors)
     # Reuse the classical fold's parameters as the stage-1 result and
@@ -233,7 +256,7 @@ def fit_fold_bayes(model, train_data, train_par, distance_matrix,
                                 shared_lengthscale=shared_lengthscale)
     fitter.fit_map(max_n_iterations=max_iter, progressbar=progressbar)
     return (fitter.map_estimates,
-            {name: priors[name].hyperparameters for name in PRIOR_PARAMS},
+            {name: priors[name].hyperparameters for name in prior_params},
             fitter.map_sigma)
 
 
@@ -501,7 +524,8 @@ def fit_fold_bayes_no_prior(model, train_data, train_par, init_pars,
 
 def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                     max_iter, debug, output_dir, smoothed=False,
-                    brain_threshold=None, shared_lengthscale=False):
+                    brain_threshold=None, shared_lengthscale=False,
+                    prior_params=None):
     """Fit classical + bayes across all folds, for a single stimulus range."""
     paradigm, data, _, _, _ = load_data(
         subject, bids_folder, roi=roi, stim_range=stim_range,
@@ -548,11 +572,12 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
         ml_train_pred = model.predict(
             parameters=ml_pars, paradigm=train_par.to_frame())
 
-        # 3. Bayesian fit with GP priors on every parameter
+        # 3. Bayesian fit with GP priors on the requested parameters
         map_pars, hyperpars_dict, sigma = fit_fold_bayes(
             model, train_data, train_par, D, cls_pars,
             max_iter=max_iter, progressbar=False,
-            shared_lengthscale=shared_lengthscale)
+            shared_lengthscale=shared_lengthscale,
+            prior_params=prior_params)
         map_pred = model.predict(
             parameters=map_pars, paradigm=test_par.to_frame())
         map_cvr2 = get_rsq(test_data, map_pred)
@@ -770,9 +795,17 @@ def _write_manifest(output_dir, subject, manifest):
 def main(subject, bids_folder, roi='NPCr', stim_range='both',
          smoothed=False, max_iter=2000, debug=False, output_dir=None,
          wb_model_label=15, use_brain_threshold=False,
-         tag='default', shared_lengthscale=False):
+         tag='default', shared_lengthscale=False,
+         prior_params=None):
     if debug:
         max_iter = 200
+    if prior_params is None:
+        prior_params = list(DEFAULT_PRIOR_PARAMS)
+    invalid = [p for p in prior_params if p not in ALLOWED_PRIOR_PARAMS]
+    if invalid:
+        raise ValueError(
+            f"prior_params {invalid} not in allowed list "
+            f"{ALLOWED_PRIOR_PARAMS}")
 
     run_started = datetime.datetime.utcnow().isoformat() + 'Z'
     import braincoder as _bc
@@ -787,7 +820,7 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
         'wb_model_label':    int(wb_model_label),
         'max_iter':          int(max_iter),
         'debug':             bool(debug),
-        'prior_params':      list(PRIOR_PARAMS),
+        'prior_params':      list(prior_params),
         'voxel_selection':   ('whole_brain_p>=0.5' if use_brain_threshold
                               else 'per_fold_p_signal>=0.5'),
         'git_neural_priors': _git_sha(op.dirname(op.abspath(__file__))),
@@ -875,7 +908,8 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
             subject, bids_folder, roi, r, D, sub, masker,
             max_iter, debug, output_dir, smoothed=smoothed,
             brain_threshold=brain_threshold,
-            shared_lengthscale=shared_lengthscale))
+            shared_lengthscale=shared_lengthscale,
+            prior_params=prior_params))
 
     pd.concat(all_cvr2, ignore_index=True).to_csv(
         op.join(output_dir, f'sub-{subject}_desc-cvr2_all.tsv'),
@@ -925,6 +959,16 @@ if __name__ == '__main__':
                              'one shared value via joint MLE. Use when you '
                              'want a single "cortical topographic scale" '
                              'rather than per-parameter scales.')
+    parser.add_argument('--prior_params', nargs='+',
+                        default=DEFAULT_PRIOR_PARAMS,
+                        choices=ALLOWED_PRIOR_PARAMS,
+                        metavar='PARAM',
+                        help='Which PRF parameters get a GP prior. Default '
+                             'is all four (mu, sd, amplitude, baseline). '
+                             'Paper-faithful single-parameter recipe: '
+                             '--prior_params mu. Empty list (passable via '
+                             "'--prior_params' with no args) gives the "
+                             'no-prior ML mode.')
     parser.add_argument('--max_iter', type=int, default=2000)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--output_dir', default=None)
@@ -936,5 +980,6 @@ if __name__ == '__main__':
          use_brain_threshold=args.use_brain_threshold,
          tag=args.tag,
          shared_lengthscale=args.shared_lengthscale,
+         prior_params=args.prior_params,
          max_iter=args.max_iter,
          debug=args.debug, output_dir=args.output_dir)

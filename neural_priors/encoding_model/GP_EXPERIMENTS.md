@@ -28,12 +28,12 @@ new tag** so the registry stays the single source of truth.
 |------------|----------------------------------------|-------------------------|-------------------------|----------------------|-----------|---------------|---------------------|-----------|-------|
 | `indep_l`  | Baseline (current production recipe)   | mu, sd, amplitude, baseline | Per-prior MLE, independent l | per-fold p_signal≥0.5 | plain + distance | running 3091131/3091133 | `shared_l`, `mu_only`, `joint_4` | 2026-05-18 | 31–36 of 39 subj landed so far. bayes consistently 0.02–0.04 r *worse* than classical at decoding. |
 | `shared_l` | Tied lengthscales across all 4 priors   | mu, sd, amplitude, baseline | Joint MLE, one shared l, per-prior v, n | per-fold p_signal≥0.5 | plain + distance | running 3091132/3091134 | `indep_l`            | 2026-05-18 | Numerically nearly identical to `indep_l` — sharing doesn't rescue the prior. |
+| `mu_only`  | Daghlian's actual paper recipe          | mu                      | Per-prior MLE           | per-fold p_signal≥0.5 | plain + distance | submitted              | `indep_l`            | 2026-05-18 | Paper applies the GP to *one* tuning parameter only; broad/no prior on sd/amplitude/baseline. Tests whether over-applying priors is what's hurting decoding. |
 
 ## Planned
 
 | Tag         | What it tests                           | Priors on   | Stage-2 mode            | Voxel selection      | Decoder ω | Notes |
 |-------------|-----------------------------------------|-------------|-------------------------|----------------------|-----------|-------|
-| `mu_only`   | Daghlian's actual recipe (single-param) | mu          | Per-prior MLE           | per-fold p_signal≥0.5 | plain + distance | Paper applies the GP to *one* tuning parameter only; broad/no prior on sd/amplitude/baseline. Likely the most informative comparison since we've been over-applying priors. |
 | `joint_4`   | Type-II MAP: hyperparams co-optimized   | mu, sd, amplitude, baseline | Hyperparams as trainable in Stage 3; no Stage 2 | per-fold p_signal≥0.5 | plain + distance | Goes beyond Daghlian. `-½ log\|K\|` term penalizes over-smoothing automatically. Needs `--joint_hyperparams` flag added to fit_gp_prior.py. |
 
 ---
