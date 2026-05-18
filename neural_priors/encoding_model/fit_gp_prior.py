@@ -471,10 +471,13 @@ def _decode_test_trials(params, train_data, train_par, test_data,
          the numerosity grid for each test trial.
       5. Readout = posterior mean over ``stim_grid``.
 
-    Returns ``None`` if no voxels pass FDR.
+    Returns ``(decoded, omega_stats)`` — ``(None, {})`` if no voxels
+    pass FDR. ``omega_stats`` is a dict of the fitted residual-fitter
+    parameters (σ², ρ, α, β, dof, mean(τ)), logged so we can introspect
+    how much the σ²·WᵀW term was contributing in each fold/method.
     """
     if len(sig_voxels) == 0:
-        return None
+        return None, {}
 
     from braincoder.models import LogGaussianPRF
     from braincoder.optimize import ResidualFitter
@@ -501,12 +504,30 @@ def _decode_test_trials(params, train_data, train_par, test_data,
         use_wwt=use_wwt,
         progressbar=False)
 
+    # Snapshot the fitted residual-fitter parameters so we can see
+    # post-hoc how much variance the σ²·WᵀW term was absorbing
+    # relative to the parametric ρ/α/β components.
+    omega_pars = dict(residfit.fitted_omega_parameters or {})
+
+    def _scalar(x):
+        x = np.asarray(x)
+        return float(x.mean()) if x.size else float('nan')
+
+    omega_stats = {
+        'omega_sigma2': _scalar(omega_pars.get('sigma2', np.nan)),
+        'omega_rho':    _scalar(omega_pars.get('rho',    np.nan)),
+        'omega_alpha':  _scalar(omega_pars.get('alpha',  np.nan)),
+        'omega_beta':   _scalar(omega_pars.get('beta',   np.nan)),
+        'omega_dof':    _scalar(omega_pars.get('dof',    dof if dof is not None else np.nan)),
+        'omega_tau_mean': _scalar(omega_pars.get('tau',  np.nan)),
+    }
+
     pdf = m.get_stimulus_pdf(test_data_sig, stim_grid, sig_params,
                               omega=omega, dof=dof)
     # pdf columns are the stimulus grid values (floats)
     cols = pdf.columns.astype(float).values
     decoded = (pdf.values * cols[None, :]).sum(axis=1) / pdf.values.sum(axis=1)
-    return decoded.astype(np.float32)
+    return decoded.astype(np.float32), omega_stats
 
 
 def fit_fold_bayes_no_prior(model, train_data, train_par, init_pars,
@@ -617,7 +638,7 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                 brain_threshold=brain_threshold)
             for omega_variant, D_arg in (('plain', None),
                                           ('distance', D)):
-                decoded = _decode_test_trials(
+                decoded, omega_stats = _decode_test_trials(
                     fit_pars, train_data, train_par, test_data,
                     sig, stim_grid, max_resid_iter=decode_iter,
                     distance_matrix=D_arg, use_wwt=use_wwt)
@@ -626,7 +647,8 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                     decoding[key] = dict(
                         n_sig=0, mae=np.nan, median_ae=np.nan,
                         mae_log=np.nan, median_ae_log=np.nan, r=np.nan,
-                        decoded=None, fdr_info=fdr_info)
+                        decoded=None, fdr_info=fdr_info,
+                        omega_stats=omega_stats)
                     continue
                 err = np.abs(decoded - true_test)
                 err_log = np.abs(np.log(np.clip(decoded, 1e-6, None))
@@ -645,7 +667,8 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                     r=r_fold,
                     decoded=decoded,
                     true=true_test,
-                    fdr_info=fdr_info)
+                    fdr_info=fdr_info,
+                    omega_stats=omega_stats)
 
         def _summarize(name, cvr2, dec_plain, dec_dist):
             return (f'  {name:9s}: cvR² {float(cvr2.mean()):+.3f} | '
@@ -729,6 +752,7 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
         for key, d in r['decoding'].items():
             method, omega_variant = key
             info = d.get('fdr_info', {}) or {}
+            o = d.get('omega_stats', {}) or {}
             dec_rows.append(dict(
                 session=r['session'], run2=r['run2'],
                 method=method, omega=omega_variant,
@@ -742,7 +766,13 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                 fdr_r2_threshold=info.get('r2_threshold', np.nan),
                 fdr_noise_mean_r2=info.get('noise_mean_r2', np.nan),
                 fdr_signal_mean_r2=info.get('signal_mean_r2', np.nan),
-                fdr_signal_weight=info.get('signal_weight', np.nan)))
+                fdr_signal_weight=info.get('signal_weight', np.nan),
+                omega_sigma2=o.get('omega_sigma2', np.nan),
+                omega_rho=o.get('omega_rho', np.nan),
+                omega_alpha=o.get('omega_alpha', np.nan),
+                omega_beta=o.get('omega_beta', np.nan),
+                omega_dof=o.get('omega_dof', np.nan),
+                omega_tau_mean=o.get('omega_tau_mean', np.nan)))
     pd.DataFrame(dec_rows).to_csv(op.join(
         output_dir, f'sub-{subject}_range-{suffix}_desc-decoding.tsv'),
         sep='\t', index=False)
