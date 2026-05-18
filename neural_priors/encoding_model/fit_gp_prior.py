@@ -451,7 +451,7 @@ def _save_r2_mixture_diagnostic(fold_results, output_dir, subject,
 
 def _decode_test_trials(params, train_data, train_par, test_data,
                          sig_voxels, stim_grid, max_resid_iter=2000,
-                         distance_matrix=None):
+                         distance_matrix=None, use_wwt=True):
     """Posterior-mean decode test trials using braincoder's Student-t
     residual noise model + ``get_stimulus_pdf``.
 
@@ -498,6 +498,7 @@ def _decode_test_trials(params, train_data, train_par, test_data,
     omega, dof = residfit.fit(
         init_sigma2=0.1, method='t', D=D_sig,
         max_n_iterations=max_resid_iter, learning_rate=0.05,
+        use_wwt=use_wwt,
         progressbar=False)
 
     pdf = m.get_stimulus_pdf(test_data_sig, stim_grid, sig_params,
@@ -534,7 +535,8 @@ def fit_fold_bayes_no_prior(model, train_data, train_par, init_pars,
 def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                     max_iter, debug, output_dir, smoothed=False,
                     brain_threshold=None, shared_lengthscale=False,
-                    prior_params=None, joint_hyperparams=False):
+                    prior_params=None, joint_hyperparams=False,
+                    use_wwt=True):
     """Fit classical + bayes across all folds, for a single stimulus range."""
     paradigm, data, _, _, _ = load_data(
         subject, bids_folder, roi=roi, stim_range=stim_range,
@@ -618,7 +620,7 @@ def _run_one_range(subject, bids_folder, roi, stim_range, D, sub, masker,
                 decoded = _decode_test_trials(
                     fit_pars, train_data, train_par, test_data,
                     sig, stim_grid, max_resid_iter=decode_iter,
-                    distance_matrix=D_arg)
+                    distance_matrix=D_arg, use_wwt=use_wwt)
                 key = (method, omega_variant)
                 if decoded is None:
                     decoding[key] = dict(
@@ -806,7 +808,8 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
          smoothed=False, max_iter=2000, debug=False, output_dir=None,
          wb_model_label=15, use_brain_threshold=False,
          tag='default', shared_lengthscale=False,
-         prior_params=None, joint_hyperparams=False):
+         prior_params=None, joint_hyperparams=False,
+         use_wwt=True):
     if debug:
         max_iter = 200
     if prior_params is None:
@@ -827,6 +830,7 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
         'tag':               tag,
         'shared_lengthscale': bool(shared_lengthscale),
         'joint_hyperparams': bool(joint_hyperparams),
+        'use_wwt':            bool(use_wwt),
         'use_brain_threshold': bool(use_brain_threshold),
         'wb_model_label':    int(wb_model_label),
         'max_iter':          int(max_iter),
@@ -921,7 +925,8 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
             brain_threshold=brain_threshold,
             shared_lengthscale=shared_lengthscale,
             prior_params=prior_params,
-            joint_hyperparams=joint_hyperparams))
+            joint_hyperparams=joint_hyperparams,
+            use_wwt=use_wwt))
 
     pd.concat(all_cvr2, ignore_index=True).to_csv(
         op.join(output_dir, f'sub-{subject}_desc-cvr2_all.tsv'),
@@ -987,6 +992,15 @@ if __name__ == '__main__':
                              'hyperparameters with the model parameters in '
                              'stage 3. The prior\'s -½ log|K(ψ)| term '
                              'automatically penalizes over-smoothing of ψ.')
+    parser.add_argument('--no_wwt', dest='use_wwt', action='store_false',
+                        help='Strip the σ²·WᵀW term from the decoder Ω. '
+                             'WᵀW is a voxel-voxel tuning-similarity '
+                             'matrix that gets injected into the noise '
+                             'covariance, potentially absorbing whatever '
+                             'spatial-smoothness gain the GP prior brings. '
+                             'Setting this lets us test whether WᵀW is '
+                             'doing real spatial-noise modeling or just '
+                             'creating cancellation.')
     parser.add_argument('--max_iter', type=int, default=2000)
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--output_dir', default=None)
@@ -1000,5 +1014,6 @@ if __name__ == '__main__':
          shared_lengthscale=args.shared_lengthscale,
          prior_params=args.prior_params,
          joint_hyperparams=args.joint_hyperparams,
+         use_wwt=args.use_wwt,
          max_iter=args.max_iter,
          debug=args.debug, output_dir=args.output_dir)
