@@ -1,0 +1,61 @@
+# GP-Prior Experiment Registry
+
+Each row is an experiment tag — the `--tag NAME` value passed to
+`fit_gp_prior.py`. Outputs land under
+
+    derivatives/encoding_models/gp_prior_roi-{ROI}[.smoothed]/exp-{tag}/
+
+with a per-subject `sub-{NN}_desc-manifest.json` recording git SHAs,
+CLI args, and timestamps. Always **add a row here before submitting a
+new tag** so the registry stays the single source of truth.
+
+---
+
+## Conventions
+
+- Tag is short kebab/snake (e.g. `indep_l`, `mu_only`, `joint_4`).
+- Within a tag, smoothing × stim_range × ROI vary; everything else is
+  fixed by the tag definition below.
+- "Status" is updated when SLURM jobs complete. Date is submission date.
+- `compared against` lists adjacent tags that share the rest of the
+  config so contrasts are clean.
+
+---
+
+## Active experiments
+
+| Tag        | What it tests                          | Priors on               | Stage-2 mode            | Voxel selection      | Decoder ω | Status        | Compared against    | Submitted | Notes |
+|------------|----------------------------------------|-------------------------|-------------------------|----------------------|-----------|---------------|---------------------|-----------|-------|
+| `indep_l`  | Baseline (current production recipe)   | mu, sd, amplitude, baseline | Per-prior MLE, independent l | per-fold p_signal≥0.5 | plain + distance | running 3091131/3091133 | `shared_l`, `mu_only`, `joint_4` | 2026-05-18 | 31–36 of 39 subj landed so far. bayes consistently 0.02–0.04 r *worse* than classical at decoding. |
+| `shared_l` | Tied lengthscales across all 4 priors   | mu, sd, amplitude, baseline | Joint MLE, one shared l, per-prior v, n | per-fold p_signal≥0.5 | plain + distance | running 3091132/3091134 | `indep_l`            | 2026-05-18 | Numerically nearly identical to `indep_l` — sharing doesn't rescue the prior. |
+
+## Planned
+
+| Tag         | What it tests                           | Priors on   | Stage-2 mode            | Voxel selection      | Decoder ω | Notes |
+|-------------|-----------------------------------------|-------------|-------------------------|----------------------|-----------|-------|
+| `mu_only`   | Daghlian's actual recipe (single-param) | mu          | Per-prior MLE           | per-fold p_signal≥0.5 | plain + distance | Paper applies the GP to *one* tuning parameter only; broad/no prior on sd/amplitude/baseline. Likely the most informative comparison since we've been over-applying priors. |
+| `joint_4`   | Type-II MAP: hyperparams co-optimized   | mu, sd, amplitude, baseline | Hyperparams as trainable in Stage 3; no Stage 2 | per-fold p_signal≥0.5 | plain + distance | Goes beyond Daghlian. `-½ log\|K\|` term penalizes over-smoothing automatically. Needs `--joint_hyperparams` flag added to fit_gp_prior.py. |
+
+---
+
+## Legacy (untagged) runs — pre-2026-05-18
+
+Before the `--tag` convention was added, outputs landed directly under
+`gp_prior_roi-{ROI}[.smoothed]/sub-NN/func/` (no `exp-` level). These
+are kept on disk for archaeology but should not be mixed with new
+experiments in analyses. Run config:
+
+- Voxel selection: **whole-brain FDR α=0.05** (subject-level threshold from `model15.cv` whole-brain cvR²; falls back to top-100 voxels when threshold > all NPC R²)
+- Priors on: mu, sd, amplitude, baseline (independent lengthscales)
+- Stage 2: per-prior MLE
+- braincoder SHA: ranged across the buggy `clipnorm` era; some folds hit NaN-gradient blow-ups (fixed by [`3392680`](https://github.com/Gilles86/braincoder/commit/3392680))
+
+---
+
+## How to add a new experiment
+
+1. Add a row to **Active experiments** (or **Planned** if not yet submitted).
+2. Pick a tag that's distinct from every existing row.
+3. Run with `--tag <your_tag>` and any flags that define the variant.
+4. After completion, fill in Status with the SLURM job ID + landed subject count.
+5. Once analyzed, append a one-line key finding to Notes.
