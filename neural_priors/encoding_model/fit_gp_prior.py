@@ -50,7 +50,8 @@ import pandas as pd
 import nibabel as nib
 
 from neural_priors.utils.data import Subject
-from neural_priors.encoding_model.fit_model import get_paradigm
+from neural_priors.encoding_model.fit_model import (
+    get_paradigm, get_model, fit_model as fit_model_npr)
 
 from scipy.spatial import cKDTree
 
@@ -451,7 +452,8 @@ def _save_r2_mixture_diagnostic(fold_results, output_dir, subject,
 
 def _decode_test_trials(params, train_data, train_par, test_data,
                          sig_voxels, stim_grid, max_resid_iter=2000,
-                         distance_matrix=None, use_wwt=True):
+                         distance_matrix=None, use_wwt=True,
+                         model_factory=None):
     """Posterior-mean decode test trials using braincoder's Student-t
     residual noise model + ``get_stimulus_pdf``.
 
@@ -487,7 +489,14 @@ def _decode_test_trials(params, train_data, train_par, test_data,
     train_data_sig = train_data.iloc[:, sig_voxels].astype(np.float32)
     test_data_sig = test_data.iloc[:, sig_voxels].astype(np.float32)
 
-    m = LogGaussianPRF(paradigm=train_par.to_frame(), parameters=sig_params)
+    if model_factory is None:
+        # Default: 1D-paradigm LogGaussianPRF (single stim_range).
+        m = LogGaussianPRF(paradigm=train_par.to_frame(), parameters=sig_params)
+    else:
+        # Caller-supplied factory — used for multi-range models like
+        # neural_priors LinearScalingModel where paradigm is a
+        # 2-column DataFrame [x, range].
+        m = model_factory(train_par, sig_params)
     m.init_pseudoWWT(stim_grid, sig_params)
 
     residfit = ResidualFitter(m, train_data_sig, train_par,
@@ -834,21 +843,336 @@ def _write_manifest(output_dir, subject, manifest):
     return fn
 
 
+def _load_data_joint(subject, bids_folder, roi='NPCr', smoothed=False):
+    """Load both stim ranges + masked single-trial estimates, indexed by
+    (session, run2). Paradigm is a 2-column DataFrame [x, range] that
+    LinearScalingModel-family models expect.
+
+    Mirrors the data flow in ``fit_model_cv.py`` exactly so a model 15
+    fit here matches the production CV pipeline byte-for-byte.
+    """
+    sub = Subject(subject, bids_folder=bids_folder)
+    paradigm = get_paradigm(sub, fit_responses=False)
+    paradigm = paradigm.set_index(
+        pd.Index((paradigm.index.get_level_values('run') - 1) % 4 + 1,
+                  name='run2'),
+        append=True)
+    paradigm.index = paradigm.index.swaplevel('run', 'run2')
+    paradigm = paradigm.astype(np.float32).droplevel(['run', 'trial_nr',
+                                                        'subject'])
+
+    masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+    data_img = sub.get_single_trial_estimates(session=None, smoothed=smoothed)
+    data = pd.DataFrame(masker.fit_transform(data_img),
+                         index=paradigm.index).astype(np.float32)
+    data.columns.name = 'voxel'
+
+    xyz = voxel_centroids_mm(masker)
+    return paradigm, data, masker, xyz, sub
+
+
+# Per-model-label config: which params to fix or share when running the
+# neural_priors fit_model() pipeline. Kept here (rather than reading from
+# fit_model.py) so the model-15 setup is explicit in this file.
+M15_FIXED_PARS = ['lower_bound_range', 'delta_wide']
+M15_BAYES_FIXED_PARS = M15_FIXED_PARS + ['sd_wide_scale']
+
+
+def _run_joint(subject, bids_folder, roi, model_label, D, sub, masker,
+                max_iter, debug, output_dir, smoothed=False,
+                brain_threshold=None,
+                shared_lengthscale=False,
+                prior_params=None,
+                joint_hyperparams=False,
+                use_wwt=True):
+    """CV fit of a multi-range model (e.g. model 15) with optional GP prior.
+
+    Uses neural_priors' ``fit_model.fit_model()`` verbatim for the
+    classical step, so the encoding fit is byte-for-byte the production
+    pipeline. The bayes step then wraps the same model in
+    ``BayesianParameterFitter`` with the requested prior(s).
+
+    Decoding runs per held-out range (narrow and wide separately), each
+    against a 2D stim grid carrying the range flag.
+    """
+    paradigm, data, _, _, _ = _load_data_joint(
+        subject, bids_folder, roi=roi, smoothed=smoothed)
+    n_vx = data.shape[1]
+    print(f'\n>>> model {model_label} joint narrow+wide: '
+          f'{data.shape[0]} trials × {n_vx} voxels')
+
+    folds = list(paradigm.groupby(level=['session', 'run2']).groups.keys())
+    if debug:
+        folds = folds[:2]
+        print(f'DEBUG: restricting to {len(folds)} folds')
+
+    if prior_params is None:
+        prior_params = ['mu_narrow']
+
+    # Validate prior params against the model's actual parameter list
+    probe_model = get_model(model_label)
+    invalid = [p for p in prior_params if p not in probe_model.parameter_labels]
+    if invalid:
+        raise ValueError(
+            f"prior_params {invalid} not in model_{model_label}'s "
+            f"parameter_labels {probe_model.parameter_labels}")
+    print(f'Prior on: {prior_params}; '
+          f'model parameters = {probe_model.parameter_labels}')
+
+    def _decoder_factory(train_par_, params_):
+        m = get_model(model_label)
+        m.paradigm = m.get_paradigm(train_par_)
+        m.parameters = params_
+        return m
+
+    fold_results = []
+    for fold in folds:
+        sess, run2 = fold
+        print(f'\n=== Fold (session={sess}, run2={run2}) ===')
+
+        test_data = data.loc[fold].copy().astype(np.float32)
+        test_par = paradigm.loc[fold].copy().astype(np.float32)
+        train_data = data.drop(fold).copy()
+        train_par = paradigm.drop(fold).copy()
+
+        # ---- 1. Classical via fit_model() (grid + iterative, with the
+        # right fixed_pars and shared_pars for this model_label).
+        model = get_model(model_label)
+        cls_pars = fit_model_npr(model_label, model, train_data, train_par,
+                                  max_n_iterations=max_iter)
+        cls_pred = model.predict(parameters=cls_pars, paradigm=train_par)
+        cls_train_r2 = float(get_rsq(train_data, cls_pred).mean())
+        cls_pred_test = model.predict(parameters=cls_pars, paradigm=test_par)
+        cls_cvr2 = get_rsq(test_data, cls_pred_test)
+        cls_train_pred = cls_pred
+
+        # ---- 2. ML: BayesianParameterFitter with no priors. Init from
+        # the classical pars. lower_bound_range + delta_wide held fixed
+        # (their grid value); other params get refit per voxel.
+        ml_fitter = BayesianParameterFitter(model, train_data, train_par,
+                                              priors={})
+        ml_fitter.classical_estimates = cls_pars
+        ml_fitter.fit_map(max_n_iterations=max_iter, init_pars=cls_pars,
+                           fixed_pars=M15_FIXED_PARS, progressbar=False)
+        ml_pars = ml_fitter.map_estimates
+        ml_sigma = ml_fitter.map_sigma
+        ml_pred_test = model.predict(parameters=ml_pars, paradigm=test_par)
+        ml_cvr2 = get_rsq(test_data, ml_pred_test)
+        ml_train_pred = model.predict(parameters=ml_pars, paradigm=train_par)
+
+        # ---- 3. Bayes: GP prior(s) on requested param(s). Also hold
+        # sd_wide_scale fixed at the classical-shared value (it was fit
+        # as one value across all voxels in stage 1).
+        priors = _build_priors(D, cls_pars, prior_params)
+        bayes_fitter = BayesianParameterFitter(model, train_data, train_par,
+                                                 priors=priors)
+        bayes_fitter.classical_estimates = cls_pars
+        if joint_hyperparams:
+            if shared_lengthscale:
+                bayes_fitter.tie_lengthscales()
+        else:
+            bayes_fitter.fit_hyperparameters(
+                progressbar=False, shared_lengthscale=shared_lengthscale)
+        bayes_fitter.fit_map(max_n_iterations=max_iter, init_pars=cls_pars,
+                              fixed_pars=M15_BAYES_FIXED_PARS,
+                              joint_hyperparams=joint_hyperparams,
+                              progressbar=False)
+        map_pars = bayes_fitter.map_estimates
+        sigma = bayes_fitter.map_sigma
+        hyperpars_dict = {name: priors[name].hyperparameters
+                          for name in prior_params}
+        map_pred_test = model.predict(parameters=map_pars, paradigm=test_par)
+        map_cvr2 = get_rsq(test_data, map_pred_test)
+        map_train_pred = model.predict(parameters=map_pars, paradigm=train_par)
+
+        # ---- 4. FDR voxel selection (train R²) + per-range decoding
+        decoding = {}
+        decode_iter = 200 if debug else 2000
+        for method, train_pred_df, fit_pars in (
+                ('classical', cls_train_pred, cls_pars),
+                ('ml',        ml_train_pred,  ml_pars),
+                ('bayes',     map_train_pred, map_pars)):
+            sig, fdr_info = _fdr_significant_voxels(
+                train_data.values, train_pred_df.values,
+                brain_threshold=brain_threshold)
+
+            for tr_range, range_label in ((0.0, 'narrow'), (1.0, 'wide')):
+                test_mask = (test_par['range'] == tr_range).values
+                if not test_mask.any():
+                    continue
+                test_data_r = test_data.loc[test_mask]
+                test_par_r = test_par.loc[test_mask]
+                true_test = test_par_r['x'].values.astype(np.float32)
+
+                # 2D stim grid: numerosity range from train data of this
+                # range, with the range flag set.
+                train_mask = (train_par['range'] == tr_range).values
+                if not train_mask.any():
+                    continue
+                stim_lo = float(train_par.loc[train_mask, 'x'].min())
+                stim_hi = float(train_par.loc[train_mask, 'x'].max())
+                stim_xs = np.linspace(stim_lo, stim_hi, 201, dtype=np.float32)
+                stim_grid = np.column_stack([
+                    stim_xs, np.full_like(stim_xs, tr_range)]).astype(np.float32)
+
+                for omega_variant, D_arg in (('plain', None),
+                                              ('distance', D)):
+                    decoded, omega_stats = _decode_test_trials(
+                        fit_pars, train_data, train_par, test_data_r,
+                        sig, stim_grid, max_resid_iter=decode_iter,
+                        distance_matrix=D_arg, use_wwt=use_wwt,
+                        model_factory=_decoder_factory)
+                    key = (method, omega_variant, range_label)
+                    if decoded is None:
+                        decoding[key] = dict(
+                            n_sig=0, mae=np.nan, median_ae=np.nan,
+                            mae_log=np.nan, median_ae_log=np.nan, r=np.nan,
+                            decoded=None, fdr_info=fdr_info,
+                            omega_stats=omega_stats)
+                        continue
+                    err = np.abs(decoded - true_test)
+                    err_log = np.abs(np.log(np.clip(decoded, 1e-6, None))
+                                      - np.log(np.clip(true_test, 1e-6, None)))
+                    if (np.std(decoded) < 1e-9 or np.std(true_test) < 1e-9
+                            or len(decoded) < 3):
+                        r_fold = float('nan')
+                    else:
+                        r_fold = float(np.corrcoef(decoded, true_test)[0, 1])
+                    decoding[key] = dict(
+                        n_sig=int(len(sig)),
+                        mae=float(np.mean(err)),
+                        median_ae=float(np.median(err)),
+                        mae_log=float(np.mean(err_log)),
+                        median_ae_log=float(np.median(err_log)),
+                        r=r_fold,
+                        decoded=decoded,
+                        true=true_test,
+                        fdr_info=fdr_info,
+                        omega_stats=omega_stats)
+
+        print(f'  (classical train R² {cls_train_r2:+.3f})')
+        for name, cvr2 in (('classical', cls_cvr2), ('ml', ml_cvr2),
+                            ('bayes', map_cvr2)):
+            summary = []
+            for rng in ('narrow', 'wide'):
+                for om in ('plain', 'distance'):
+                    d = decoding.get((name, om, rng), {})
+                    r = d.get('r', float('nan'))
+                    summary.append(f'{rng[:1]}/{om[:1]} r {r:+.3f}')
+            print(f'  {name:9s}: cvR² {float(cvr2.mean()):+.3f} | ' +
+                  ' | '.join(summary))
+        for name, hp in hyperpars_dict.items():
+            print(f'    prior[{name}]: l={hp["lengthscale"]:.2f} mm, '
+                  f'v={hp["variance"]:.3f}, nug={hp["nugget"]:.3f}')
+
+        fold_results.append({
+            'session': sess, 'run2': run2,
+            'classical_params': cls_pars, 'ml_params': ml_pars,
+            'bayes_params': map_pars,
+            'classical_cvr2': cls_cvr2, 'ml_cvr2': ml_cvr2,
+            'bayes_cvr2': map_cvr2,
+            'hyperparameters': hyperpars_dict,
+            'ml_sigma': ml_sigma, 'bayes_sigma': sigma,
+            'decoding': decoding,
+        })
+
+    # ---- Write outputs ----
+    suffix = f'm{model_label}'
+    with open(op.join(output_dir,
+                       f'sub-{subject}_model-{suffix}_desc-folds.pkl'),
+              'wb') as f:
+        pickle.dump({
+            'subject': subject, 'roi': roi, 'model_label': model_label,
+            'folds': fold_results,
+        }, f)
+
+    # cvR² long-form per voxel × fold × method
+    rows = []
+    for r in fold_results:
+        for method, cvr2 in (('classical', r['classical_cvr2']),
+                              ('ml',        r['ml_cvr2']),
+                              ('bayes',     r['bayes_cvr2'])):
+            for vox, val in cvr2.items():
+                rows.append(dict(
+                    session=r['session'], run2=r['run2'],
+                    voxel=int(vox), method=method,
+                    model_label=int(model_label), cvr2=float(val)))
+    cvr2_long = pd.DataFrame(rows)
+    cvr2_long.to_csv(op.join(
+        output_dir, f'sub-{subject}_model-{suffix}_desc-cvr2.tsv'),
+        sep='\t', index=False)
+
+    # Hyperparams
+    hp_rows = []
+    for r in fold_results:
+        for pname, hp in r['hyperparameters'].items():
+            hp_rows.append(dict(session=r['session'], run2=r['run2'],
+                                 parameter=pname, **hp))
+    if hp_rows:
+        pd.DataFrame(hp_rows).to_csv(op.join(
+            output_dir, f'sub-{subject}_model-{suffix}_desc-hyperpars.tsv'),
+            sep='\t', index=False)
+
+    # Decoding: one row per (fold, method, omega, range). Has the same
+    # column schema as the LogGaussianPRF path plus a 'stim_range' column.
+    dec_rows = []
+    for r in fold_results:
+        for key, d in r['decoding'].items():
+            method, omega_variant, range_label = key
+            info = d.get('fdr_info', {}) or {}
+            o = d.get('omega_stats', {}) or {}
+            dec_rows.append(dict(
+                session=r['session'], run2=r['run2'],
+                method=method, omega=omega_variant,
+                n_sig_voxels=d['n_sig'],
+                mae=d['mae'], median_ae=d['median_ae'],
+                mae_log=d.get('mae_log', np.nan),
+                median_ae_log=d.get('median_ae_log', np.nan),
+                r=d.get('r', np.nan),
+                stim_range=range_label,
+                model_label=int(model_label),
+                fdr_fallback=info.get('fallback', False),
+                fdr_r2_threshold=info.get('r2_threshold', np.nan),
+                fdr_noise_mean_r2=info.get('noise_mean_r2', np.nan),
+                fdr_signal_mean_r2=info.get('signal_mean_r2', np.nan),
+                fdr_signal_weight=info.get('signal_weight', np.nan),
+                omega_sigma2=o.get('omega_sigma2', np.nan),
+                omega_rho=o.get('omega_rho', np.nan),
+                omega_alpha=o.get('omega_alpha', np.nan),
+                omega_beta=o.get('omega_beta', np.nan),
+                omega_dof=o.get('omega_dof', np.nan),
+                omega_tau_mean=o.get('omega_tau_mean', np.nan)))
+    pd.DataFrame(dec_rows).to_csv(op.join(
+        output_dir, f'sub-{subject}_model-{suffix}_desc-decoding.tsv'),
+        sep='\t', index=False)
+
+    return cvr2_long
+
+
 def main(subject, bids_folder, roi='NPCr', stim_range='both',
          smoothed=False, max_iter=2000, debug=False, output_dir=None,
          wb_model_label=15, use_brain_threshold=False,
          tag='default', shared_lengthscale=False,
          prior_params=None, joint_hyperparams=False,
-         use_wwt=True):
+         use_wwt=True, model_label=None):
     if debug:
         max_iter = 200
     if prior_params is None:
-        prior_params = list(DEFAULT_PRIOR_PARAMS)
-    invalid = [p for p in prior_params if p not in ALLOWED_PRIOR_PARAMS]
-    if invalid:
-        raise ValueError(
-            f"prior_params {invalid} not in allowed list "
-            f"{ALLOWED_PRIOR_PARAMS}")
+        # Model 15 (and other LinearScalingModel variants) has 'mu_narrow'
+        # rather than 'mu'. Default to a sensible single-parameter prior
+        # in either case.
+        if model_label is None:
+            prior_params = list(DEFAULT_PRIOR_PARAMS)
+        else:
+            prior_params = ['mu_narrow']
+    if model_label is None:
+        invalid = [p for p in prior_params if p not in ALLOWED_PRIOR_PARAMS]
+        if invalid:
+            raise ValueError(
+                f"prior_params {invalid} not in allowed list "
+                f"{ALLOWED_PRIOR_PARAMS}")
+    # If model_label is set, _run_joint validates against the actual
+    # model.parameter_labels after instantiation.
 
     run_started = datetime.datetime.utcnow().isoformat() + 'Z'
     import braincoder as _bc
@@ -861,6 +1185,8 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
         'shared_lengthscale': bool(shared_lengthscale),
         'joint_hyperparams': bool(joint_hyperparams),
         'use_wwt':            bool(use_wwt),
+        'model_label':       (int(model_label) if model_label is not None
+                              else None),
         'use_brain_threshold': bool(use_brain_threshold),
         'wb_model_label':    int(wb_model_label),
         'max_iter':          int(max_iter),
@@ -946,17 +1272,30 @@ def main(subject, bids_folder, roi='NPCr', stim_range='both',
                      f'sub-{subject}_desc-wholebrain_r2_mixture.tsv'),
             sep='\t', index=False)
 
-    ranges = ['narrow', 'wide'] if stim_range == 'both' else [stim_range]
-    all_cvr2 = []
-    for r in ranges:
-        all_cvr2.append(_run_one_range(
-            subject, bids_folder, roi, r, D, sub, masker,
+    if model_label is not None:
+        # Multi-range neural_priors model (e.g., LinearScalingModel
+        # model 15). Fits narrow + wide jointly in one CV pass.
+        all_cvr2 = [_run_joint(
+            subject, bids_folder, roi, model_label, D, sub, masker,
             max_iter, debug, output_dir, smoothed=smoothed,
             brain_threshold=brain_threshold,
             shared_lengthscale=shared_lengthscale,
             prior_params=prior_params,
             joint_hyperparams=joint_hyperparams,
-            use_wwt=use_wwt))
+            use_wwt=use_wwt)]
+        ranges = ['joint']
+    else:
+        ranges = ['narrow', 'wide'] if stim_range == 'both' else [stim_range]
+        all_cvr2 = []
+        for r in ranges:
+            all_cvr2.append(_run_one_range(
+                subject, bids_folder, roi, r, D, sub, masker,
+                max_iter, debug, output_dir, smoothed=smoothed,
+                brain_threshold=brain_threshold,
+                shared_lengthscale=shared_lengthscale,
+                prior_params=prior_params,
+                joint_hyperparams=joint_hyperparams,
+                use_wwt=use_wwt))
 
     pd.concat(all_cvr2, ignore_index=True).to_csv(
         op.join(output_dir, f'sub-{subject}_desc-cvr2_all.tsv'),
@@ -1007,8 +1346,7 @@ if __name__ == '__main__':
                              'want a single "cortical topographic scale" '
                              'rather than per-parameter scales.')
     parser.add_argument('--prior_params', nargs='+',
-                        default=DEFAULT_PRIOR_PARAMS,
-                        choices=ALLOWED_PRIOR_PARAMS,
+                        default=None,
                         metavar='PARAM',
                         help='Which PRF parameters get a GP prior. Default '
                              'is all four (mu, sd, amplitude, baseline). '
@@ -1022,6 +1360,15 @@ if __name__ == '__main__':
                              'hyperparameters with the model parameters in '
                              'stage 3. The prior\'s -½ log|K(ψ)| term '
                              'automatically penalizes over-smoothing of ψ.')
+    parser.add_argument('--model_label', type=int, default=None,
+                        help='Use a neural_priors fit_model.py model '
+                             '(e.g. 15 = LinearScalingModel narrow+wide '
+                             'with shared sd_wide_scale and fixed '
+                             'lower_bound_range / delta_wide). When set, '
+                             'narrow and wide trials are fit jointly in '
+                             'one CV pass instead of separately. Default '
+                             'prior_params becomes [mu_narrow]. The '
+                             '--range argument is ignored.')
     parser.add_argument('--no_wwt', dest='use_wwt', action='store_false',
                         help='Strip the σ²·WᵀW term from the decoder Ω. '
                              'WᵀW is a voxel-voxel tuning-similarity '
@@ -1045,5 +1392,6 @@ if __name__ == '__main__':
          prior_params=args.prior_params,
          joint_hyperparams=args.joint_hyperparams,
          use_wwt=args.use_wwt,
+         model_label=args.model_label,
          max_iter=args.max_iter,
          debug=args.debug, output_dir=args.output_dir)
