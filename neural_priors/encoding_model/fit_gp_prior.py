@@ -878,6 +878,28 @@ M15_FIXED_PARS = ['lower_bound_range', 'delta_wide']
 M15_BAYES_FIXED_PARS = M15_FIXED_PARS + ['sd_wide_scale']
 
 
+def _wire_lsm_transforms(model):
+    """Point ``_transform_parameters_forward/backward`` at the model's own
+    ``_forward2/_backward2`` if it has them.
+
+    ``LinearScalingModel`` (and similar custom subclasses) build their
+    own 7-parameter softplus/identity transforms via
+    ``create_transform_functions`` and store them as ``_forward2`` /
+    ``_backward2``, but they never assign these to the standard
+    ``_transform_parameters_forward`` / ``_backward`` attributes that
+    braincoder's ``ParameterFitter`` actually calls. The parent
+    AlphaGaussianPRF's 5-parameter ``self.transformations`` would then
+    silently strip 2 columns of the 7-parameter init array, producing
+    ``IndexError`` when ``shared_pars`` indexes beyond column 4. This
+    fix mirrors the pattern in ``braincoder.models.prf_2d`` that does
+    the same assignment explicitly.
+    """
+    if hasattr(model, '_transform_parameters_forward2'):
+        model._transform_parameters_forward = model._transform_parameters_forward2
+        model._transform_parameters_backward = model._transform_parameters_backward2
+    return model
+
+
 def _run_joint(subject, bids_folder, roi, model_label, D, sub, masker,
                 max_iter, debug, output_dir, smoothed=False,
                 brain_threshold=None,
@@ -910,7 +932,7 @@ def _run_joint(subject, bids_folder, roi, model_label, D, sub, masker,
         prior_params = ['mu_narrow']
 
     # Validate prior params against the model's actual parameter list
-    probe_model = get_model(model_label)
+    probe_model = _wire_lsm_transforms(get_model(model_label))
     invalid = [p for p in prior_params if p not in probe_model.parameter_labels]
     if invalid:
         raise ValueError(
@@ -920,7 +942,7 @@ def _run_joint(subject, bids_folder, roi, model_label, D, sub, masker,
           f'model parameters = {probe_model.parameter_labels}')
 
     def _decoder_factory(train_par_, params_):
-        m = get_model(model_label)
+        m = _wire_lsm_transforms(get_model(model_label))
         m.paradigm = m.get_paradigm(train_par_)
         m.parameters = params_
         return m
@@ -937,7 +959,7 @@ def _run_joint(subject, bids_folder, roi, model_label, D, sub, masker,
 
         # ---- 1. Classical via fit_model() (grid + iterative, with the
         # right fixed_pars and shared_pars for this model_label).
-        model = get_model(model_label)
+        model = _wire_lsm_transforms(get_model(model_label))
         cls_pars = fit_model_npr(model_label, model, train_data, train_par,
                                   max_n_iterations=max_iter)
         cls_pred = model.predict(parameters=cls_pars, paradigm=train_par)
