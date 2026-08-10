@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neural_priors"
+version = "0.1"
+description = "Analysis code for 'Distributed range adaptation in human parietal encoding of numbers' (Prat-Carrabin, de Hollander, et al.)"
+authors = [
+    { name = "Gilles de Hollander", email = "gilles.de.hollander@gmail.com" },
+    { name = "Arthur Prat-Carrabin" },
+]
+requires-python = ">=3.9"
+# Dependencies are intentionally not declared here: the reproducible
+# environments of record are the pinned conda specifications
+# (environment.yml for the cluster, environment_silicon.yml for local macOS).
+# Install this package into one of those envs with `pip install -e .`.
+
+[project.urls]
+Homepage = "https://github.com/ruffgroup/neural_priors"
+
+[tool.setuptools.packages.find]
+include = ["neural_priors*"]
+
+[tool.setuptools.package-data]
+neural_priors = ["data/subjects.yml"]

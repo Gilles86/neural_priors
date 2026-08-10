@@ -1,0 +1,27 @@
+name: neural_priors_silicon
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy=1.26
+  - pandas
+  - seaborn
+  - matplotlib
+  - scipy
+  - scikit-learn
+  - jupyter
+  - ipywidgets
+  - pip
+  - pingouin
+  - nipype
+  - tqdm
+  - pip:
+      - tensorflow-macos==2.16.1
+      - tensorflow-metal==1.1.0
+      - tensorflow-probability==0.24.0
+      - tf-keras==2.16.0
+      - tensorflow-addons
+      - nilearn
+      - -e ./libs/braincoder
+      - -e .
