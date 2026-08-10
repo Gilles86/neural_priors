@@ -29,7 +29,7 @@ from neural_priors.encoding_model.fit_model import get_model, fit_model
 
 def _wire_lsm_transforms(model):
     # LinearScalingModel stores its 7-parameter transforms as _forward2/_backward2;
-    # point the standard names ParameterFitter uses at them (see fit_gp_prior.py).
+    # point the standard names ParameterFitter uses at them (see archive/gp_prior/fit_gp_prior.py).
     if hasattr(model, '_transform_parameters_forward2'):
         model._transform_parameters_forward = model._transform_parameters_forward2
         model._transform_parameters_backward = model._transform_parameters_backward2
@@ -37,13 +37,14 @@ def _wire_lsm_transforms(model):
 
 
 def main(design='full', start_iteration=0, n_iterations=10, sd_wide_scale=1.287794,
-         noise=0.5, n_voxels=250, bids_folder='/data/ds-neuralpriors'):
+         noise=0.5, n_voxels=250, sample_subject=False, bids_folder='/data/ds-neuralpriors'):
 
     assert design in ['full', 'censored'], "Design must be either 'full' or 'censored'"
 
     bids_folder = Path(bids_folder)
 
-    target_dir = bids_folder / 'simulated_recovery_sd' / f'sd_scale_{sd_wide_scale}' / f'noise_{noise}' / f'design_{design}'
+    design_dir = f'design_{design}_subjectwise' if sample_subject else f'design_{design}'
+    target_dir = bids_folder / 'simulated_recovery_sd' / f'sd_scale_{sd_wide_scale}' / f'noise_{noise}' / design_dir
     target_dir.mkdir(exist_ok=True, parents=True)
 
     pars = pd.read_csv(bids_folder / 'derivatives' / 'encoding_models' / 'group_roi-NPCr_desc-groundtruth_parameters.tsv',
@@ -72,7 +73,15 @@ def main(design='full', start_iteration=0, n_iterations=10, sd_wide_scale=1.2877
 
         model = _wire_lsm_transforms(get_model(15))
 
-        p = pars.sample(n=n_voxels, random_state=iteration)
+        if sample_subject:
+            # Mirror the real per-subject model-15 fit: one random subject,
+            # all of their supra-threshold voxels (29-535 across subjects)
+            rng = np.random.RandomState(iteration)
+            subject = rng.choice(pars.index.unique('subject_id'))
+            p = pars.xs(subject, level='subject_id', drop_level=False)
+        else:
+            subject = None
+            p = pars.sample(n=n_voxels, random_state=iteration)
 
         prf_pars = pd.DataFrame({'mu_narrow': p[('mu', 'narrow')].values,
                                  'delta_wide': 2.0,
@@ -90,7 +99,8 @@ def main(design='full', start_iteration=0, n_iterations=10, sd_wide_scale=1.2877
 
         print(f'Estimated sd_wide_scale in iteration {iteration}: {recovered_sd_wide_scale}')
 
-        results = pd.DataFrame({'iteration': iteration, 'sd_wide_scale': recovered_sd_wide_scale}, index=[0])
+        results = pd.DataFrame({'iteration': iteration, 'sd_wide_scale': recovered_sd_wide_scale,
+                                'subject': subject, 'n_voxels': len(p)}, index=[0])
         results.to_csv(target_dir / f'iteration-{iteration}_results.csv', index=False)
 
         # Per-voxel ground truth vs recovered parameters (for mu/sd trade-off checks)
@@ -112,11 +122,13 @@ if __name__ == '__main__':
     parser.add_argument('--n_iterations', type=int, default=10, help='Number of iterations to run')
     parser.add_argument('--sd_wide_scale', type=float, default=1.287794, help='Generative width scaling factor')
     parser.add_argument('--noise', type=float, default=0.5, help='Standard deviation of the Gaussian noise added to simulated responses')
-    parser.add_argument('--n_voxels', type=int, default=250, help='Number of simulated voxels per iteration')
+    parser.add_argument('--n_voxels', type=int, default=250, help='Number of simulated voxels per iteration (ignored with --sample_subject)')
+    parser.add_argument('--sample_subject', action='store_true',
+                        help='Sample one random subject per iteration and use all their supra-threshold voxels, instead of pooling voxels across subjects')
     parser.add_argument('--bids_folder', type=str, default='/data/ds-neuralpriors', help='Path to the BIDS folder')
 
     args = parser.parse_args()
 
     main(design=args.design, start_iteration=args.start_iteration, n_iterations=args.n_iterations,
          sd_wide_scale=args.sd_wide_scale, noise=args.noise, n_voxels=args.n_voxels,
-         bids_folder=args.bids_folder)
+         sample_subject=args.sample_subject, bids_folder=args.bids_folder)
