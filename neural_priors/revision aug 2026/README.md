@@ -17,6 +17,17 @@ the same distribution of preferred numerosities and tuning widths (including
 "awkward" voxels, e.g. monotonic response profiles from off-range preferred
 numerosities) as the real data.
 
+### Two sampling variants
+
+- **Pooled** (default): each iteration draws 250 voxels from the group-level
+  pool described below, over all subjects.
+- **Subject-wise** (`--sample_subject`): each iteration draws one random
+  subject and simulates **all** of that subject's supra-threshold voxels
+  (29–535 across subjects). This exactly mirrors the real model-15 fit, which
+  estimates one width-scaling factor per subject over that subject's voxels,
+  and lets recovery precision vary with per-subject voxel count as it does in
+  the real data.
+
 ### Per-voxel parameters: resampled empirical (μ, σ) pairs
 
 The generative pool consists of the model-15 fits in right parietal cortex
@@ -88,5 +99,8 @@ Outputs per iteration (in
   `mu_narrow`/`sd_narrow` (plus recovered amplitude/baseline), for checking
   the reviewer's μ/width trade-off directly at the voxel level
 
-100 iterations were run per cell of the 2 (generative `sd_wide_scale`) × 2
-(design) grid.
+100 iterations were run per cell of the 2 (sampling variant) × 2 (generative
+`sd_wide_scale`) × 2 (design) grid, as a SLURM array on the sciencecluster
+(`slurm_jobs/submit_recovery_sd.sh`, env `neural_priors_gp`); results were
+rsynced back to the local BIDS folder for analysis in
+`recovery_bias_sd.ipynb`.
