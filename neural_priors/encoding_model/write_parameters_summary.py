@@ -19,6 +19,37 @@ from neural_priors.utils.data import Subject, get_all_subject_ids
 from neural_priors.encoding_model.fit_model import get_paradigm
 
 
+def _load_ll_from_extracted_pars(bids_folder, roi, model_label, smoothed, fit_responses, censored):
+    """Load loglikelihood (and cvr2 for model -1) from the extract_pars TSV.
+
+    Returns dict mapping subject_id -> dict of {column_name -> np.array per voxel}.
+    """
+    extracted_dir = Path(bids_folder) / 'derivatives' / 'extracted_pars'
+    desc = 'responses' if fit_responses else 'groundtruth'
+    if censored:
+        desc += '.censored'
+    fn = extracted_dir / f'group_roi-{roi}_model-{model_label}_desc-{desc}_parameters.tsv'
+    if not fn.exists():
+        return {}
+    try:
+        df = pd.read_csv(fn, sep='\t', header=[0, 1], index_col=[0, 1, 2])
+        # Flatten MultiIndex columns, dropping empty/nan levels
+        df.columns = ['_'.join(str(c) for c in col if str(c) not in ('', 'nan'))
+                      for col in df.columns]
+        wanted = [c for c in df.columns if c in ('loglikelihood', 'cvr2')]
+        if not wanted:
+            return {}
+        result = {}
+        for subj in df.index.get_level_values(0).unique():
+            subj_str = str(subj).zfill(2)
+            subj_df = df.loc[subj][wanted]
+            result[subj_str] = {col: subj_df[col].values for col in wanted}
+        return result
+    except Exception as e:
+        print(f'Warning: could not load extract_pars TSV for model {model_label}: {e}')
+        return {}
+
+
 # Number of free parameters per voxel for each model (per-voxel free + shared counted as 1 + sigma).
 # Shared parameters are counted conservatively as one per voxel.
 N_PARAMETERS = {
@@ -31,6 +62,7 @@ N_PARAMETERS = {
     5:  6,   # + shared delta_wide
     14: 6,   # mu, sd_narrow, sd_wide, amp, baseline + sigma
     15: 6,   # mu, baseline, sd_narrow, amp + shared sd_wide_scale + sigma
+    18: 7,   # mu, baseline, sd_narrow, amp + shared delta_wide, sd_wide_scale + sigma
     31: 5,   # mu, baseline, sd_narrow, amp + sigma  (delta_wide, sd_wide_scale fixed)
     32: 6,   # mu, baseline, sd_narrow, amp_narrow, amp_beta + sigma
     33: 6,   # mu, baseline, sd_narrow, amp_narrow + shared amp_beta + sigma
@@ -48,11 +80,13 @@ MODELS = {
     5:  'Efficient coding: shared shift ratio',
     14: 'Free width ratio, per voxel',
     15: 'Fitted width scaling, shared across voxels',
+    18: 'Fitted shift + width scaling, shared across voxels',
     31: 'Fixed width scaling (δ_σ=1.29)',
     32: 'Fixed width scaling + free amplitude ratio',
     33: 'Fixed width scaling + shared amplitude ratio',
     34: 'Fixed tuning, free amplitude per voxel',
-    35: 'Fixed tuning, shared amplitude ratio',
+    35: 'Fixed tuning, shared amplitude ratio + fitted shift',
+    36: 'Fixed tuning, shared amplitude ratio',
 }
 
 
@@ -65,17 +99,17 @@ def main(models=None, roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=
     target_dir = Path(bids_folder) / 'derivatives' / 'summary_tsvs'
     target_dir.mkdir(parents=True, exist_ok=True)
 
+    # Pre-load loglikelihood (and cvr2 for model -1) from extract_pars TSVs
+    ll_lookup = {}  # (model_label, response_fit) -> {subject_id -> {col -> array}}
+    for model_label in models:
+        for response_fit in ([False] if model_label == -1 else [False, True]):
+            ll_lookup[(model_label, response_fit)] = _load_ll_from_extracted_pars(
+                bids_folder, roi, model_label, smoothed, response_fit, censored)
+
     rows = []
 
     for subject_id in tqdm(subject_ids, desc='Subjects'):
         sub = Subject(subject_id, bids_folder=bids_folder)
-
-        # Get masker and n_obs once per subject (used for loglikelihood loading and BIC)
-        try:
-            masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
-        except Exception as e:
-            print(f'Warning: could not get masker for {subject_id}: {e}')
-            masker = None
 
         try:
             paradigm = get_paradigm(sub, fit_responses=False)
@@ -88,30 +122,21 @@ def main(models=None, roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=
             model_name = MODELS.get(model_label, str(model_label))
 
             if model_label == -1:
-                # Null model: no pRF parameters, load loglikelihood directly
-                ll_key = 'model-1'
-                if censored:
-                    ll_key += '.censored'
-                if smoothed:
-                    ll_key += '.smoothed'
-                ll_fn = (Path(bids_folder) / 'derivatives' / 'encoding_models' / ll_key
-                         / f'sub-{subject_id}' / 'func'
-                         / f'sub-{subject_id}_desc-loglikelihood_roi-{roi}_space-T1w_pars.nii.gz')
-                if ll_fn.exists() and masker is not None:
-                    ll = masker.transform(str(ll_fn)).squeeze()
-                    pars = pd.DataFrame({'loglikelihood': ll})
-                    k = N_PARAMETERS.get(-1)
-                    pars['aic'] = 2 * k - 2 * pars['loglikelihood']
-                    if n_obs is not None:
-                        pars['bic'] = np.log(n_obs) * k - 2 * pars['loglikelihood']
-                    pars['subject'] = subject_id
-                    pars['model_label'] = model_label
-                    pars['model'] = model_name
-                    pars['response_fit'] = False
-                    pars['voxel'] = pars.index
-                    rows.append(pars)
-                else:
-                    print(f'Warning: subject {subject_id} model -1: no loglikelihood file')
+                ll_data = ll_lookup.get((-1, False), {}).get(subject_id, {})
+                if 'loglikelihood' not in ll_data:
+                    print(f'Warning: subject {subject_id} model -1: no loglikelihood in TSV')
+                    continue
+                pars = pd.DataFrame(ll_data)
+                k = N_PARAMETERS[-1]
+                pars['aic'] = 2 * k - 2 * pars['loglikelihood']
+                if n_obs is not None:
+                    pars['bic'] = np.log(n_obs) * k - 2 * pars['loglikelihood']
+                pars['subject'] = subject_id
+                pars['model_label'] = model_label
+                pars['model'] = model_name
+                pars['response_fit'] = False
+                pars['voxel'] = pars.index
+                rows.append(pars)
                 continue
 
             for response_fit in [False, True]:
@@ -126,20 +151,10 @@ def main(models=None, roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=
                         for col in pars.columns
                     ]
 
-                    # Load loglikelihood and compute AIC/BIC
-                    ll_key = f'model{model_label}'
-                    if censored:
-                        ll_key += '.censored'
-                    if smoothed:
-                        ll_key += '.smoothed'
-                    if response_fit:
-                        ll_key += '.fit_responses'
-                    ll_fn = (Path(bids_folder) / 'derivatives' / 'encoding_models' / ll_key
-                             / f'sub-{subject_id}' / 'func'
-                             / f'sub-{subject_id}_desc-loglikelihood_roi-{roi}_space-T1w_pars.nii.gz')
-                    if ll_fn.exists() and masker is not None:
-                        ll = masker.transform(str(ll_fn)).squeeze()
-                        pars['loglikelihood'] = ll
+                    # Add loglikelihood from extract_pars TSV and compute AIC/BIC
+                    ll_data = ll_lookup.get((model_label, response_fit), {}).get(subject_id, {})
+                    if 'loglikelihood' in ll_data:
+                        pars['loglikelihood'] = ll_data['loglikelihood']
                         if model_label in N_PARAMETERS:
                             k = N_PARAMETERS[model_label]
                             pars['aic'] = 2 * k - 2 * pars['loglikelihood']
@@ -166,7 +181,7 @@ def main(models=None, roi='NPCr', bids_folder='/data/ds-neuralpriors', smoothed=
     if censored:
         desc += '.censored'
 
-    fn = target_dir / f'main_models_roi-{roi}_desc-{desc}_parameters.tsv'
+    fn = target_dir / f'main_models_roi-{roi}_desc-{desc}_parameters.tsv.gz'
     out.to_csv(fn, sep='\t', index=False)
     print(f'Wrote {fn}')
 
