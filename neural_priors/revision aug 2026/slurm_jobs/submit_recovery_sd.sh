@@ -17,6 +17,7 @@
 #SBATCH --output=/home/gdehol/logs/recovery_sd_%A_%a.txt
 set -eo pipefail
 export PYTHONUNBUFFERED=1
+export KERAS_BACKEND=tensorflow
 
 TASK=${SLURM_ARRAY_TASK_ID}
 CELL=$((TASK / 10))
