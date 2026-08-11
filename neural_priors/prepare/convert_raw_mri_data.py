@@ -1,3 +1,16 @@
+"""Convert raw Philips scanner exports (PAR/REC-derived NIfTIs) to BIDS.
+
+Copies T1w/FLAIR/BOLD/physio files into sub-*/ses-*/{anat,func} and
+synthesizes opposite-phase-encoding fieldmaps for susceptibility
+distortion correction: runs alternate PE direction (odd runs i / RL,
+even runs i- / LR), so each run's PEPOLAR epi fieldmap is built from
+5 volumes of a neighboring run with the opposite PE, with IntendedFor
+set accordingly.
+
+NOTE: expects bold_template.json and fmap_template.json in the current
+working directory. Provenance script only — the shared dataset ships
+already converted.
+"""
 import re
 import os
 import os.path as op

@@ -1,3 +1,18 @@
+"""
+Cross-validated version of fit_model.py: 8-fold leave-one-run-out fit of an
+nPRF model for one subject. Runs are re-indexed as run2 = (run - 1) % 4 + 1,
+pairing runs k and k+4 of the same session; each of the 8 folds holds out one
+(session, run2) pair, so train and test sets both contain
+narrow- and wide-condition trials. Refits the full model on each training set
+and evaluates out-of-sample R2 on the held-out runs.
+
+Writes the fold-mean cvR2 per voxel as a NIfTI to
+derivatives/encoding_models/model{N}.cv[.flags]/sub-{id}/func/.
+Used for voxel selection (analyses keep voxels with mean cvR2 > 0) and model
+comparison (proportion of voxels with cvR2 > 0). model_label -1 is a
+tuning-free null model predicting each voxel's training-set mean.
+"""
+
 import os
 import os.path as op
 import argparse
@@ -39,6 +54,7 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
     # Get paradigm/data/model
     sub = Subject(subject, bids_folder=bids_folder)
     paradigm = get_paradigm(sub, fit_responses=fit_responses)
+    # run2 pairs runs k and k+4 of the same session; the 8 (session, run2) pairs define the CV folds
     paradigm = paradigm.set_index(pd.Index((paradigm.index.get_level_values('run') - 1) % 4 + 1, name='run2'), append=True)
     paradigm.index = paradigm.index.swaplevel('run', 'run2')
     paradigm = paradigm.astype(np.float32).droplevel(['run', 'trial_nr', 'subject'])    

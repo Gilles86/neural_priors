@@ -14,9 +14,9 @@ Code for fitting population receptive field (PRF) encoding models to fMRI data, 
 | `decode.py` | Bayesian decoding: inverts the encoding model to compute a posterior PDF over numerosity for each held-out trial. |
 | `extract_pars.py` | Reads fitted NIfTI parameter maps and writes fast-access TSVs to `derivatives/extracted_pars/`. Run this before any group-level analysis. |
 | `write_parameters_summary.py` | Collects per-subject TSVs across all main models into a single long-format group summary TSV. |
-| `calc_likelihood.py` | Computes trial-wise log-likelihoods under the fitted noise model. |
-| `get_expected_uncertainty.py` | Theoretical expected uncertainty from the fitted encoding model parameters. |
-| `get_fisher_info.py` | Fisher information of the encoding model as a function of numerosity. |
+| `calc_likelihood.py` | Computes voxelwise log-likelihoods under the fitted noise model (input to AIC/BIC). |
+| `get_expected_uncertainty.py` | Simulates responses from the fitted generative model and decodes them back: expected variability of an ideal Bayesian decoder (Fig. 5a right, 5b). |
+| `get_fisher_info.py` | Fisher information of the encoding model per numerosity and condition, computed analytically via braincoder (Fig. 5a left). |
 
 ---
 
@@ -24,17 +24,11 @@ Code for fitting population receptive field (PRF) encoding models to fMRI data, 
 
 | Notebook | Contents |
 |----------|---------|
-| `analyze_results.ipynb` | Main group-level analysis of fitted encoding model parameters. |
-| `analyze_decoding.ipynb` | Decoding reliability across a sweep of model/voxel configurations. |
-| `analyze_decoding_fit_responses.ipynb` | Decoding analysis for the primary model (model 31, smoothed, spherical noise, fit_responses). Reports rm_corr and MAE statistics for the manuscript. |
-| `analyze_sigma.ipynb` | Analysis of tuning width parameters across the group. |
-| `analyze_likelihoods.ipynb` | Trial-wise log-likelihood analysis. |
-| `compare_decoding_methods.ipynb` | Comparison of decoding configurations (noise model, voxel selection). |
-| `compare_decoding_lambda_baseline.ipynb` | Effect of regularisation (λ) and baseline subtraction on decoding. |
-| `expected_uncertainty.ipynb` | Plots theoretical expected uncertainty from encoding model parameters. |
-| `fisher_info.ipynb` | Fisher information curves from the fitted models. |
-| `get_likelihood.ipynb` | Interactive exploration of trial-wise likelihoods. |
-| `get_trialwise_neural_measures.ipynb` | Extracts trial-wise neural summary measures for regression analyses. |
+| `analyze_decoding_fit_responses.ipynb` | Decoding analysis for the production configuration (model 31, smoothed, spherical noise, fit_responses, n_voxels=0). Prints the "MANUSCRIPT STATS" block (rm-corr, MAE, censored-at-25 comparison). |
+| `expected_uncertainty.ipynb` | Aggregates `get_expected_uncertainty.py` outputs into a group table (consumed by `notebooks/behavior_vs_fmri.ipynb`). |
+| `get_trialwise_neural_measures.ipynb` | Extracts trial-wise decoded posterior mean/SD, writes `derivatives/decoding2/decoding_pars.tsv` (consumed by the Stan fMRI variants and `behavior_vs_fmri.ipynb`). |
+
+Superseded analysis notebooks (older parameter/decoding sweeps) live in `archive/encoding_model/` at the repository root.
 
 ---
 
@@ -49,8 +43,11 @@ Submit jobs as SLURM arrays (one job per subject). See `CLAUDE.md` at the reposi
 | `decode.sh` | Bayesian decoding |
 | `extract_pars_uncensored.sh` | Extract parameters (uncensored models) |
 | `extract_pars_censored.sh` | Extract parameters (censored models) |
-| `extract_pars_115_135.sh` | Extract parameters for the fixed-slope model series (115–145) |
-| `submit_*.sh` | Convenience scripts for batch-submitting multiple configurations |
+| `extract_pars_115_135.sh` | Extract parameters for the fixed-slope model series (115–135) |
+| `fit_model_whole_brain.sh` / `fit_model_cv_whole_brain.sh` | Whole-brain (GPU) fits for the surface maps |
+| `calc_likelihood.sh` / `submit_likelihoods.sh` | Voxelwise log-likelihoods, all models × subjects |
+| `submit_fixed_sd_scaling_jobs.sh` | Width-scaling sweep (models 115–135) behind the δ_σ = 1.29 choice |
+| `submit_decode_model31.sh` | Batch submission of the model-31 decoding variants |
 
 ---
 

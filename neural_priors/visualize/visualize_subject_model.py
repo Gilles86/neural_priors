@@ -1,3 +1,11 @@
+"""
+Single-subject pycortex viewer of cvR2 and preferred numerosity
+(narrow/wide) on the native surface (Fig. 2b screenshots).
+
+Voxels are masked when their preferred numerosity falls outside [vmin, vmax]
+in either condition. Run from this directory (`from utils import ...`).
+"""
+
 import cortex
 import numpy as np
 import matplotlib as mpl

@@ -1,3 +1,9 @@
+"""
+Same maps as visualize_subject_model.py but for many subjects at once on
+fsaverage (supplementary all-subject maps).
+Run from this directory (`from utils import ...`).
+"""
+
 import cortex
 import numpy as np
 import matplotlib.pyplot as plt

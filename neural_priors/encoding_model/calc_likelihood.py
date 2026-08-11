@@ -1,3 +1,11 @@
+"""
+Compute the per-voxel Gaussian log-likelihood of the single-trial data under a
+fitted nPRF model, with sigma set to the residual SD of that voxel.
+
+Written as a NIfTI to derivatives/encoding_models/model{N}[.flags]/, where it
+is picked up by extract_pars.py — this is the basis of the AIC/BIC model
+comparison. Model -1 is the null model, predicting each voxel's mean response.
+"""
 
 import argparse
 import numpy as np

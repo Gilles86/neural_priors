@@ -38,7 +38,8 @@ Key flags
 --n_voxels N        Select the top N voxels by training-set R².
 --spherical_noise   Fit isotropic (scalar) noise rather than full covariance.
 --separate_sigmas   Fit separate noise models for narrow and wide conditions.
---fit_responses     Use behavioural responses as the decoded variable instead
+--fit_responses     Use the response-fitted encoding model (fitted to the
+                    participant's estimates) instead
                     of the true presented numerosity.
 """
 
@@ -395,7 +396,8 @@ if __name__ == '__main__':
     parser.add_argument('--model_label', default=3, type=int)
     parser.add_argument('--bids_folder', default='/data/ds-neuralpriors')
     parser.add_argument('--smoothed', action='store_true')
-    parser.add_argument('--n_voxels', type=int)
+    parser.add_argument('--n_voxels', type=int, default=100,
+                        help='0: use all voxels with cross-validated R2 > 0 (production); N: top N voxels by training R2')
     parser.add_argument('--fit_responses', action='store_true')
     parser.add_argument('--separate_sigmas', action='store_true',
                         help='Whether to fit separate sigmas for narrow and wide conditions')

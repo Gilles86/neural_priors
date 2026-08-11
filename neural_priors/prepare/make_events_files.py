@@ -1,3 +1,10 @@
+"""
+Convert raw PsychoPy source logs into BIDS events.tsv files.
+
+Onsets are re-referenced to the trigger_2 scanner pulse of each run, and trial
+numbers are made continuous across runs ((run-1)*30 + trial).
+"""
+
 import argparse
 from neural_priors.utils.data import Subject
 import pandas as pd

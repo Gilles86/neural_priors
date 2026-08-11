@@ -1,3 +1,15 @@
+"""
+Expected decoding uncertainty of the fitted generative model (ideal Bayesian
+decoder; Fig. 5a right / 5b).
+
+Simulates 20,000 noisy response patterns per numerosity from the fitted nPRF
+model plus its Student-t residual noise model, decodes each pattern by the
+posterior mean, and writes per-numerosity error/variability summaries to
+derivatives/expected_uncertainty/. --wide extends the simulated stimulus grid
+to 10-40 for both conditions (narrow-encoding/wide-prior control; dashed line
+in Fig. 5b).
+"""
+
 import argparse
 from pathlib import Path
 from neural_priors.utils.data import Subject

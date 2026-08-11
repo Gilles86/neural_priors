@@ -1,3 +1,18 @@
+"""
+Fit an nPRF encoding model (see models.py) to GLMsingle single-trial estimates
+of one subject, within an ROI mask (default NPCr) or whole brain.
+
+Two-stage fit: exhaustive grid search (correlation cost) for initialization,
+then joint ADAM gradient descent on all trials of both range conditions.
+Every model is fitted both to the presented numerosity (default, "ground truth")
+and to the participant's estimate (--fit_responses); --censored restricts trials
+to numerosities < 26 (the narrow range) as a control analysis.
+
+Writes per-voxel, per-condition parameter maps and in-sample R2 as NIfTIs to
+derivatives/encoding_models/model{N}[.flags]/sub-{id}/func/.
+MODELS.md in this folder is the authoritative registry of all model labels.
+"""
+
 import os
 import os.path as op
 import argparse
@@ -52,6 +67,7 @@ from neural_priors.encoding_model.models import AlphaDeltaModel, LinearScalingMo
 
 # Number of free parameters per voxel (per-voxel free + shared counted as 1 + sigma for noise).
 # Used for AIC/BIC computation: AIC = 2k - 2*LL, BIC = ln(n)*k - 2*LL
+# NB: duplicated in write_parameters_summary.py — keep the two dicts in sync.
 N_PARAMETERS = {
     -1: 2,   # mean + sigma
     0:  5,   # mu, sd, amp, baseline + sigma  (lb, alpha, delta_wide fixed)
@@ -72,6 +88,11 @@ N_PARAMETERS = {
 }
 
 def get_model(model_label):
+    """
+    Map a numeric model label to a model class + structural flags (which parameters
+    exist and how conditions couple). Together with get_grid() and the
+    fixed/shared lists in fit_model(), this fully defines each label; see MODELS.md.
+    """
 
     if model_label in [4, 5, 7, 8]:
         model = AlphaDeltaModel(identity_below_range=True)
@@ -109,9 +130,21 @@ def get_model(model_label):
     return model
 
 def get_grid(model_label):
+    """
+    Grid-search values per parameter, in model.parameter_labels order.
+    Parameters a label fixes get a single grid value (that value stays fixed
+    or is refined in gradient descent, per fit_model()'s fixed/shared lists).
+    Grid search uses a correlation cost, so amplitude/baseline placeholders
+    (1/0) are irrelevant there and refined afterwards by OLS.
+    """
 
+    # 41 candidate preferred numerosities x 30 tuning widths
+    # 41 candidate preferred numerosities (5-45) x 30 widths; for the log-space
+    # models the width grid is 0.5-2.0 in log units (natural-space 2-30 applies
+    # only to the sd_natural models 26/27). The paper's Methods rounds these
+    # ranges (41 modes "5-41", widths "2-30").
     modes = np.linspace(5, 45, 41)
-    
+
     if model_label in [26, 27]: # sigma in natural space
         sds = np.linspace(2, 30, 30)
     elif model_label in [28, 29, 30]: # FWHM in natural space
@@ -124,8 +157,11 @@ def get_grid(model_label):
         sd_scales = [np.sqrt(2)]
 
     elif model_label in [31, 32, 33]:
+        # Fixed width-scaling ratio r_sigma = 1.287794: the across-subject mean
+        # of the shared sd_wide_scale fitted in model 15
         sd_scales = [1.287794]
     elif model_label > 100:
+        # Sweep of fixed r_sigma values: label N > 100 encodes r_sigma = N/100 (115-135)
         sd_scales = [float(model_label)/100.]
 
 
@@ -193,8 +229,15 @@ def get_grid(model_label):
         
 
 def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_brain=False):
+    """
+    Two-stage fit: (1) exhaustive grid search with a correlation-based cost
+    (invariant to amplitude/baseline), for some models followed by an OLS refit
+    of amplitude/baseline; (2) joint ADAM gradient descent on (negative)
+    relative explained variance.
+    The fixed_pars/shared_pars lists below implement each label's constraints:
+    fixed = kept at grid value, shared = one value across a participant's voxels.
+    """
 
-    # Fit model
     fitter = ParameterFitter(model, data, paradigm)
     grid = get_grid(model_label)
 
@@ -207,6 +250,9 @@ def fit_model(model_label, model, data, paradigm, max_n_iterations=1000, whole_b
     
 
     if model_label < 9 or model_label == 14:
+        # OLS refit of amplitude/baseline after the correlation-based grid search
+        # (which is invariant to them); for the remaining models gradient descent
+        # starts from the grid placeholders directly
         grid_pars = fitter.refine_baseline_and_amplitude(grid_pars)
 
     fixed_pars = []
@@ -431,7 +477,12 @@ def conditionspecific_to_raw_pars(model_label, pars_cs):
 
 
 def get_conditionspecific_parameters(model_label, estimated_parameters):
-    
+    """
+    Expand raw optimizer parameters into explicit per-condition (narrow/wide)
+    values — e.g. mu_wide from the shift rule, sd_wide = sd_wide_scale * sd_narrow —
+    for writing per-condition NIfTI maps. Inverse of conditionspecific_to_raw_pars.
+    """
+
     pars = pd.DataFrame()
 
     pars[('mu', 'narrow')] = estimated_parameters['mu_narrow']
@@ -516,6 +567,12 @@ def get_conditionspecific_parameters(model_label, estimated_parameters):
     return pars.stack('range').reorder_levels(['range', 'source'], axis=0).sort_index()
 
 def get_paradigm(sub, fit_responses=False):
+    """
+    Build the two-column paradigm (x, range) over all trials of both sessions.
+    x is the presented numerosity ("ground truth"), or with fit_responses the
+    participant's estimate (missing responses imputed with the subject mean).
+    range: 0 = narrow prior condition, 1 = wide.
+    """
     behavior = sub.get_behavioral_data(session=None)
 
     if fit_responses:
@@ -569,6 +626,8 @@ def main(subject, smoothed, model_label=1, bids_folder='/data/ds-neuralpriors', 
     data = pd.DataFrame(masker.fit_transform(data), index=paradigm.index).astype(np.float32)
 
     if censored:
+        # Control analysis: keep only numerosities within the narrow range (10-25),
+        # so narrow and wide conditions contain identical stimulus values
         data = data[paradigm['x'] < 26]
         paradigm = paradigm[paradigm['x'] < 26]
 

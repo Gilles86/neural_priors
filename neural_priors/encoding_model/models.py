@@ -1,3 +1,14 @@
+"""
+Numerosity population receptive field (nPRF) model classes for the neural_priors project.
+
+Both classes predict single-trial voxel responses with a bell-shaped tuning curve over
+numerosity x:  f(x) = baseline + amplitude * exp(-(log x - log mu)^2 / (2 sigma^2)),
+i.e. log-Gaussian tuning. The paradigm has two columns: x (numerosity) and range
+(0 = Narrow prior condition, numerosities 10-25; 1 = Wide prior condition, 10-40).
+The models differ in how tuning parameters are allowed to change between conditions
+(see MODELS.md). Fitted by fit_model.py; used throughout the encoding/decoding analyses.
+"""
+
 from braincoder.models import AlphaGaussianPRF
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -12,8 +23,12 @@ def create_transform_functions(transforms):
     """
     Creates forward and backward transformation functions based on the parameter labels.
 
+    Positive-only parameters (mu, sd, amplitude) are optimized in an unconstrained
+    space and mapped through softplus, which keeps them positive during ADAM
+    gradient descent without hard bounds.
+
     Args:
-        parameter_labels (list of str): List of parameter labels.
+        transforms (list of str): Per-parameter transform ('softplus' or 'identity').
 
     Returns:
         tuple: A tuple containing the forward and backward transformation functions.
@@ -47,6 +62,12 @@ def create_transform_functions(transforms):
     return tf.function(forward_transform_function), tf.function(backward_transform_function)
 
 class AlphaDeltaModel(AlphaGaussianPRF):
+    """
+    nPRF with Gaussian tuning in a Box-Cox-transformed stimulus space
+    (exponent alpha; alpha -> 0 recovers log space). Preferred numerosity shifts
+    between conditions as mu_wide = delta_wide * (mu_narrow - lower_bound_range)
+    + lower_bound_range. Used for models 0-14; see MODELS.md.
+    """
 
     def __init__(self, paradigm=None, data=None, parameters=None,
                  weights=None, omega=None, allow_neg_amplitudes=False, verbosity=logging.INFO,
@@ -137,11 +158,14 @@ class AlphaDeltaModel(AlphaGaussianPRF):
         lower_bound_range = parameters[:, tf.newaxis, :, 3]
 
         mu_narrow = parameters[:, tf.newaxis, :, 0]
+        # Linear shift rule: mu_wide = delta * (mu_narrow - lb) + lb, with lb = lower_bound_range
+        # (shared lower bound of both stimulus ranges, 10). Clipped to stay positive for log().
         mu_wide = tf.clip_by_value(((mu_narrow - lower_bound_range) * delta_wide) + lower_bound_range, 1e-6, float('inf'))
 
         mu = tf.where(wide_condition, mu_wide, mu_narrow)
 
         if self.identity_below_range:
+            # Voxels tuned below the range lower bound do not shift (mu_wide = mu_narrow)
             mu = tf.where(mu < lower_bound_range, mu_narrow, mu)
 
         if self.separate_amplitudes:
@@ -183,6 +207,14 @@ class AlphaDeltaModel(AlphaGaussianPRF):
         return Stimulus(n_dimensions=2)
 
 class LinearScalingModel(AlphaGaussianPRF):
+    """
+    Primary production model (models 15+; see MODELS.md): log-normal tuning over
+    numerosity with a linear shift of preferred numerosity between conditions,
+    mu_wide = delta_wide * (mu_narrow - lower_bound_range) + lower_bound_range.
+    With separate_sds, tuning width scales multiplicatively:
+    sd_wide = sd_wide_scale * sd_narrow (sd_wide_scale fixed at 1.287794 in model 31).
+    sd_natural / sigma_fwhm reparameterize the width in natural numerosity units.
+    """
 
     def __init__(self,  paradigm=None, data=None, parameters=None,
                  weights=None, omega=None, allow_neg_amplitudes=False, verbosity=logging.INFO,
@@ -303,11 +335,14 @@ class LinearScalingModel(AlphaGaussianPRF):
         lower_bound_range = parameters[:, tf.newaxis, :, 2]
 
         mu_narrow = parameters[:, tf.newaxis, :, 0]
+        # Linear shift rule: mu_wide = delta * (mu_narrow - lb) + lb, with lb = lower_bound_range
+        # (shared lower bound of both stimulus ranges, 10). Clipped to stay positive for log().
         mu_wide = tf.clip_by_value(((mu_narrow - lower_bound_range) * delta_wide) + lower_bound_range, 1e-6, float('inf'))
 
         mu = tf.where(wide_condition, mu_wide, mu_narrow)
 
         if self.identity_below_range:
+            # Voxels tuned below the range lower bound do not shift (mu_wide = mu_narrow)
             mu = tf.where(mu < lower_bound_range, mu_narrow, mu)
 
         if self.separate_sds:
@@ -330,6 +365,8 @@ class LinearScalingModel(AlphaGaussianPRF):
             amplitude_alpha = parameters[:, tf.newaxis, :, alpha_index]
             amplitude_beta = parameters[:, tf.newaxis, :, beta_index]
 
+            # Wide-condition amplitude is an affine function of the narrow one
+            # (alpha = intercept, beta = slope; fixed or shared depending on model)
             amplitude_wide = amplitude_alpha + amplitude_beta * amplitude_narrow
 
             amplitude = tf.where(wide_condition, amplitude_wide, amplitude_narrow)

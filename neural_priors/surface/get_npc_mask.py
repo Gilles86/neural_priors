@@ -1,3 +1,14 @@
+"""Build subject-native NPC (numerosity parietal cortex) volume masks.
+
+Group-level NPC surface labels on fsaverage (from Barretto-Garcia et al.,
+2023) are resampled to each subject's native surface with FreeSurfer's
+SurfaceTransform, then projected through the cortical ribbon into the
+subject's T1w volume with neuropythy (nearest-neighbor).
+
+Writes bilateral, left-only and right-only masks to
+derivatives/ips_masks/sub-{id}/anat/. Consumed by
+Subject.get_volume_mask(); NPCr (right NPC) is the paper's main ROI.
+"""
 import os
 import os.path as op
 import argparse

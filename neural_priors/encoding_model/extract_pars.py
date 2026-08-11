@@ -1,5 +1,12 @@
 """
-Extract pRF parameters for all subjects and concatenate into a single group TSV file.
+Extract fitted per-voxel nPRF parameters for all subjects and concatenate them
+into a single group TSV per model.
+
+Reads the per-subject parameter NIfTIs written by fit_model.py (plus the
+log-likelihood NIfTI from calc_likelihood.py when present) and caches them as
+one flat table — the fast path used by Subject.get_prf_parameters_volume().
+Must be run before any group-level analysis. Model -1 is the null model: it has
+no pRF parameters, so only log-likelihood and cvR2 are extracted.
 
 Output is written to:
   <bids_folder>/derivatives/extracted_pars/

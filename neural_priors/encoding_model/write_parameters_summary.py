@@ -1,9 +1,13 @@
 """
-Collect all pRF parameters for the specified encoding models across subjects
-and write a single long-format summary TSV.
+Collect the extracted pRF parameters for all main models across subjects and
+write a single long-format summary TSV — the one input for the group-level
+figure notebooks (Figs. 3, 4).
+
+Adds per-voxel model-comparison criteria from the log-likelihoods:
+AIC = 2k - 2LL and BIC = ln(n)*k - 2LL, with n = 480 trials (n_obs).
 
 Output:
-  <bids_folder>/derivatives/summary_tsvs/main_models_roi-<roi>_desc-<desc>_parameters.tsv
+  <bids_folder>/derivatives/summary_tsvs/main_models_roi-<roi>_desc-<desc>_parameters.tsv.gz
 
 One row per voxel per subject per model per response_fit condition.
 MultiIndex columns from get_prf_parameters_volume are flattened:
@@ -52,6 +56,7 @@ def _load_ll_from_extracted_pars(bids_folder, roi, model_label, smoothed, fit_re
 
 # Number of free parameters per voxel for each model (per-voxel free + shared counted as 1 + sigma).
 # Shared parameters are counted conservatively as one per voxel.
+# NB: duplicated in fit_model.py — keep the two dicts in sync.
 N_PARAMETERS = {
     -1: 2,   # mean + sigma
     0:  5,   # mu, sd, amp, baseline + sigma  (lb, alpha, delta_wide fixed)
@@ -68,6 +73,7 @@ N_PARAMETERS = {
     33: 6,   # mu, baseline, sd_narrow, amp_narrow + shared amp_beta + sigma
     34: 7,   # mu, lb, baseline, sd, amp_narrow, amp_beta + sigma
     35: 8,   # mu, lb, baseline, sd, amp_narrow + shared amp_alpha, amp_beta + sigma
+    36: 7,   # mu, lb, baseline, sd, amp_narrow + shared amp_beta + sigma (amp_alpha fixed at 0)
 }
 
 MODELS = {

@@ -1,3 +1,13 @@
+"""Sample whole-brain nPRF parameter volumes onto the cortical surface.
+
+Per hemisphere, nilearn's vol_to_surf averages the T1w-space parameter
+maps (mu, sd, amplitude, baseline per range condition, plus r2/cvr2)
+along the white-to-pial axis, yielding fsnative vertex values; the
+mu/sd/r2/cvr2 maps are then resampled fsnative -> fsaverage with
+FreeSurfer's SurfaceTransform. The resulting .func.gii files feed
+Subject.get_prf_parameters_surf() and the Fig. 2 surface maps
+(visualize/visualize_*.py).
+"""
 import argparse
 import os.path as op
 from neural_priors.utils.data import Subject
@@ -26,8 +36,8 @@ def main(subject, model_label, bids_folder, smoothed, keys_to_extract=None):
     sub = Subject(subject, bids_folder=bids_folder)
     surfinfo = sub.get_surf_info()
 
-    prf_pars_volume = sub.get_prf_parameters_volume2(model_label=model_label, smoothed=smoothed, return_image=True,
-                                                     par_keys = ['mu', 'sd', 'amplitude', 'baseline'])
+    prf_pars_volume = sub.get_prf_parameters_volume(model_label=model_label, smoothed=smoothed, return_image=True,
+                                                    par_keys = ['mu', 'sd', 'amplitude', 'baseline'])
 
     key = f'model{model_label}.whole_brain'
 

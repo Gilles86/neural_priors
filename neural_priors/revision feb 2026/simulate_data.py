@@ -18,7 +18,11 @@ def main(design='full', start_iteration=0, n_iterations=100, delta_wide=2.0, bid
 
     target_dir.mkdir(exist_ok=True, parents=True)
 
-    bids_folder = Path('/data/ds-neuralpriors')
+    bids_folder = Path(bids_folder)
+    # NB: these monolithic all-model TSVs are a legacy snapshot that no current
+    # script regenerates (extract_pars.py now writes per-model files to
+    # derivatives/extracted_pars/); they only exist on the machine where the
+    # recovery simulations were originally run.
     pars_ground_truth = pd.read_csv(bids_folder / 'derivatives' / 'encoding_models' / 'group_roi-NPCr_desc-groundtruth_parameters.tsv', sep='\t', index_col=[0, 1, 2, 3], header=[0, 1, ])
     pars_estimates = pd.read_csv(bids_folder / 'derivatives' / 'encoding_models' / 'group_roi-NPCr_desc-responses_parameters.tsv', sep='\t', index_col=[0, 1, 2, 3], header=[0, 1, ])
 
@@ -61,12 +65,16 @@ def main(design='full', start_iteration=0, n_iterations=100, delta_wide=2.0, bid
 
         fitted_pars = fit_model(5, model, data, paradigm)
 
-        delta_wide = fitted_pars.iloc[0]['delta_wide']
+        # NOTE: do not rebind `delta_wide` here — it is the *generating* value
+        # for every iteration in this run. An earlier version overwrote it with
+        # the recovered estimate, so iterations after the first simulated from
+        # the previous iteration's estimate instead of the requested value.
+        estimated_delta_wide = fitted_pars.iloc[0]['delta_wide']
 
-        print(f'Estimated delta_wide in iteration {iteration}: {delta_wide}')
+        print(f'Estimated delta_wide in iteration {iteration}: {estimated_delta_wide}')
 
         # Write results to file
-        results = pd.DataFrame({'iteration': iteration, 'delta_wide': delta_wide}, index=[0])
+        results = pd.DataFrame({'iteration': iteration, 'delta_wide': estimated_delta_wide}, index=[0])
         results.to_csv(target_dir / f'iteration-{iteration}_results.csv', index=False)
 
 

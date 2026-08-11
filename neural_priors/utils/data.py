@@ -1,3 +1,18 @@
+"""Data access layer for the neural_priors dataset
+("Distributed range adaptation in human parietal encoding of numbers").
+
+All analyses read behavioral data, single-trial fMRI estimates, ROI masks
+and fitted encoding-model (nPRF) parameters through the `Subject` class,
+so BIDS path conventions live in exactly one place.
+
+Conventions:
+- Subject IDs are zero-padded strings ('01'...'41'); ints are converted.
+- Included subjects completed 2 sessions x 8 runs x 30 trials = 480 trials.
+  sub-11 and sub-23 have only a single session and are excluded
+  (see neural_priors/data/subjects.yml).
+- Each run used either the narrow (10-25) or wide (10-40) numerosity range;
+  the 'range' condition is inferred from the data (wide if any n > 25).
+"""
 import os.path as op
 import numpy as np
 import pandas as pd
@@ -11,6 +26,10 @@ from tqdm.contrib.itertools import product
 from itertools import product as product_
 
 def get_all_subject_ids(only_full=True):
+    """Return the IDs (zero-padded strings) of all included subjects.
+
+    Inclusion = more than one session listed in data/subjects.yml; this
+    drops the single-session subjects sub-11 and sub-23."""
     with files('neural_priors').joinpath('data', 'subjects.yml').open() as stream:
         mapping = yaml.safe_load(stream)
 
@@ -53,6 +72,10 @@ class Subject(object):
             return yaml.safe_load(stream)[self.subject_id]
 
     def get_behavioral_data(self, session=None, tasks=None, raw=False, add_info=True):
+        """Trial-wise stimulus numerosities (n) and estimation responses from the
+        PsychoPy source logs. The per-run 'range' condition is inferred from the
+        data (wide if any n > 25). raw=True returns all logged events; otherwise
+        one row per trial, with (abs/squared) estimation errors when add_info."""
 
         if session is None:
             data = pd.concat((self.get_behavioral_data(session, tasks, raw, add_info) for session in self.get_sessions()), keys=self.get_sessions(), names=['session'])
@@ -148,6 +171,9 @@ class Subject(object):
         return files
 
     def get_onsets(self, session=None):
+        """Read the BIDS events.tsv files (stimulus + response events per run,
+        written by prepare/make_events_files.py); both sessions concatenated
+        when session is None."""
 
         if session is None:
             sessions = [1,2]
@@ -162,6 +188,9 @@ class Subject(object):
 
 
     def get_confounds(self, session=None, type='minimum'):
+        """fMRIPrep confound regressors per run. 'minimum' keeps only the cosine
+        drift terms and non-steady-state outlier indicators; 'full' returns all
+        columns."""
         runs = self.get_runs(session)
 
         confounds = pd.concat([pd.read_csv(op.join(self.bids_folder, 'derivatives', 'fmriprep', f'sub-{self.subject_id}', f'ses-{session}', 'func', f'sub-{self.subject_id}_ses-{session}_task-task_run-{run}_desc-confounds_timeseries.tsv'), sep='\t') for run in runs],
@@ -177,6 +206,12 @@ class Subject(object):
 
     def get_single_trial_estimates(self, session, type='stim', smoothed=False, roi=None,
                                    zscore_sessions=False):
+        """GLMsingle single-trial response amplitudes (glm/fit_single_trials_denoise.py).
+
+        type='stim' (stimulus events, the encoding-model input) or 'response'.
+        session=None loads both sessions concatenated (480 trials; asserted),
+        a single session yields 240. Optionally z-score each session separately
+        and/or return the voxels x trials matrix for an ROI."""
 
         if (session is not None) and (zscore_sessions):
             raise ValueError(f'Cannot zscore across sessions wiht only one session ({session})')
@@ -215,6 +250,9 @@ class Subject(object):
         return im
 
     def get_brain_mask(self, session=None, epi_space=True, return_masker=True, debug_mask=False):
+        """fMRIPrep whole-brain mask on the T1w-space functional grid, used for
+        whole-brain encoding-model fits. debug_mask subsamples ~1% of voxels
+        for fast test runs."""
         if not epi_space:
             raise ValueError('Only EPI space is supported')
 
@@ -252,7 +290,12 @@ class Subject(object):
 
 
     def get_volume_mask(self, roi=None, session=1, epi_space=False, return_masker=False, verbose=False):
-        """Retrieve a volume mask, optionally in EPI space and as a NiftiMasker."""
+        """Retrieve a volume mask, optionally in EPI space and as a NiftiMasker.
+
+        Anatomical ROIs (NPC*/NF*/NTO*) come from derivatives/ips_masks,
+        built by surface/get_npc_mask.py from group fsaverage labels;
+        NPCr (right NPC) is the paper's main ROI. The EPI-space version is
+        resampled (nearest-neighbor) onto the functional grid and cached."""
 
         def _log(msg):
             """Helper function for verbose logging."""
@@ -338,6 +381,15 @@ class Subject(object):
 
     def get_prf_parameters_volume(self, model_label, smoothed=True, roi=None, response_fit=False, return_image=False,
                                    raw=False, par_keys=None, censored=False, use_nifti=False):
+        """Fitted encoding-model parameters, one row per voxel in the ROI mask.
+
+        Columns carry a (parameter, range) MultiIndex with range in
+        {'narrow', 'wide'} for condition-specific parameters (r2/cvr2 have no
+        range level). Default fast path reads the pre-extracted group TSV in
+        derivatives/extracted_pars/ (run encoding_model/extract_pars.py first);
+        use_nifti=True (or custom par_keys) reads the per-parameter NIfTI maps
+        directly. raw=True converts condition-specific back to raw model
+        parameters; return_image=True gives the maps as a 4D NIfTI instead."""
 
         # Fast path: read from pre-extracted group TSV if available and no custom par_keys requested
         if par_keys is None and not use_nifti:
@@ -357,7 +409,16 @@ class Subject(object):
 
                 if raw:
                     from neural_priors.encoding_model.fit_model import conditionspecific_to_raw_pars
-                    pars = conditionspecific_to_raw_pars(model_label, pars)
+                    try:
+                        pars = conditionspecific_to_raw_pars(model_label, pars)
+                    except KeyError as e:
+                        # The extracted TSVs lack some raw parameters (e.g. alpha,
+                        # lower_bound_range for AlphaDeltaModel labels <= 14) — those
+                        # only exist as NIfTIs.
+                        raise KeyError(
+                            f'Raw parameter {e} not in the extracted TSV for model '
+                            f'{model_label}; pass use_nifti=True to load it from the '
+                            f'per-parameter NIfTI maps instead.') from e
 
                 if return_image:
                     masker = self.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
@@ -398,6 +459,9 @@ class Subject(object):
             key += '.fit_responses'
             cv_key += '.fit_responses'
 
+        # NB: for roi=None this uses the ses-1 run-1 brain mask, whereas the
+        # whole-brain fits (fit_model.py) were fitted inside get_brain_mask()'s
+        # run-2 mask; voxels present in only one of the two masks read back as 0.
         masker = self.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
 
         target_dir = op.join(self.bids_folder, 'derivatives', 'encoding_models', key, f'sub-{self.subject_id}', 'func')
@@ -446,6 +510,9 @@ class Subject(object):
         return info
 
     def get_prf_parameters_surf(self, model_label, smoothed=False, hemi=None, space='fsnative', fit_responses=False):
+        """Whole-brain nPRF parameters sampled onto the cortical surface
+        (r2, cvr2, preferred numerosity mu per range condition), as produced by
+        surface/sample_prf_to_surface_nilearn.py; used for the Fig. 2 maps."""
 
         parameter_keys = ['r2', 'cvr2', 'mu.narrow', 'mu.wide']
 
@@ -494,24 +561,3 @@ class Subject(object):
 
             return image.load_img(t1w)
 
-    def get_prf_predictions(self, session, smoothed=False, roi=None, range_n=None, return_image=False,
-                            include_n=True, gaussian=False):
-
-        prf_pars = self.get_prf_parameters_volume(session, cross_validated=False, smoothed=smoothed, roi=roi, range_n=range_n,
-                                                return_image=False, gaussian=gaussian)
-
-        paradigm = self.get_behavioral_data()['n']
-
-        from braincoder.models import LogGaussianPRF, GaussianPRF
-        if gaussian:
-            model = GaussianPRF(paradigm=paradigm, parameters=prf_pars)
-        else:
-            model = LogGaussianPRF(paradigm=paradigm, parameters=prf_pars,
-                            parameterisation='mode_fwhm_natural')
-
-        predictions = model.predict(paradigm)
-
-        if include_n:
-            predictions.set_index(paradigm, append=True, inplace=True)
-
-        return predictions

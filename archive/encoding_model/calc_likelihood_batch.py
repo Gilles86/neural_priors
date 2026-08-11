@@ -1,3 +1,8 @@
+"""
+Serial local loop over models x subjects calling calc_likelihood.main();
+the SLURM equivalent is slurm_jobs/submit_likelihoods.sh.
+Must be run from inside this directory (flat import of calc_likelihood).
+"""
 
 import argparse
 from calc_likelihood import main

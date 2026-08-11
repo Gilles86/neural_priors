@@ -1,3 +1,28 @@
+"""Estimate single-trial response amplitudes with GLMsingle.
+
+Inputs: fMRIPrep-preprocessed BOLD in T1w space (with --smoothed, first
+smoothed here with a 5 mm FWHM Gaussian kernel) and the BIDS events.tsv
+onsets.
+
+Design: one regressor per stimulus event AND per response event
+(2 x 30 per run), with onsets snapped to the TR grid (TR 2.286 s, coded
+as 2.3 s) as GLMsingle requires, and a stimulus duration of 0.6 s.
+GLMsingle runs with its full pipeline: HRF library (wantlibrary),
+GLMdenoise noise PCs (wantglmdenoise) and fractional ridge shrinkage
+(wantfracridge).
+
+The positional `session` argument selects one session; 0 means both
+sessions concatenated (the production setting), with GLMsingle's
+sessionindicator marking the session boundary.
+
+Deliberately, no confound regressors beyond the GLMdenoise PCs are
+included: motion/acquisition regressors correlate with the data-driven
+PCs and can hurt downstream decoding (see Methods and
+https://github.com/cvnlab/GLMsingle/pull/130).
+
+Outputs, in derivatives/glm_stim1.denoise[.smoothed]: desc-stim_pe and
+desc-response_pe 4D NIfTIs (one volume per trial) and a desc-R2 map.
+"""
 from glmsingle.glmsingle import GLM_single
 import argparse
 import os
@@ -31,6 +56,7 @@ def main(subject, session, bids_folder, confounds=False, smoothed=False):
 
     data = [image.load_img(im).get_fdata() for im in ims]
 
+    # Every stimulus and response event gets its own regressor (single-trial design)
     onsets = sub.get_onsets(session)
     onsets['trial_type'] = onsets.apply(lambda row: f'stimulus_{row["n"]}' if row['trial_type'] == 'stimulus' else f'response_{row.response}', axis=1)
     onsets['duration'] = 0.0
@@ -38,6 +64,7 @@ def main(subject, session, bids_folder, confounds=False, smoothed=False):
     tr = 2.3
     n = 137
     frametimes = np.linspace(tr/2., (n - .5)*tr, n)
+    # Snap onsets to the nearest TR: GLMsingle expects volume-aligned onset indicators
     onsets['onset'] = ((onsets['onset']+tr/2.) // 2.3) * 2.3
 
     if session is None:
@@ -58,6 +85,7 @@ def main(subject, session, bids_folder, confounds=False, smoothed=False):
 
     # dm = pd.concat(dm, keys=[(session, run) for (session, run), names=['run']).fillna(0)
     dm.columns = [c.replace('_delay_0', '') for c in dm.columns]
+    # Binarize the FIR design to the 0/1 onset matrix GLMsingle expects
     dm /= dm.max()
     dm = np.round(dm)
     print(dm)
@@ -85,7 +113,9 @@ def main(subject, session, bids_folder, confounds=False, smoothed=False):
     # and also save them to the disk
     opt['wantfileoutputs'] = [0, 0, 0, 1]
 
-    # see https://github.com/cvnlab/GLMsingle/pull/130
+    # Deliberately no extra confound regressors: they correlate with the
+    # GLMdenoise PCs and can hurt decoding (see Methods).
+    # See https://github.com/cvnlab/GLMsingle/pull/130
     # confounds = sub.get_confounds(session=session)
     # confounds = [d.values for run, d in sub.get_confounds().groupby('run')]
     # opt['extra_regressors'] = confounds
@@ -101,6 +131,8 @@ def main(subject, session, bids_folder, confounds=False, smoothed=False):
         2.3,
         outputdir=base_dir)
 
+    # Betas come back in chronological event order; stimulus and response events
+    # alternate within a trial, so even indices are stimulus betas, odd are response
     betas = results_glmsingle['typed']['betasmd']
     betas = image.new_img_like(ims[0], betas)
     stim_betas = image.index_img(betas, slice(None, None, 2))

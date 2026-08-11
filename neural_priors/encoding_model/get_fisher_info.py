@@ -1,7 +1,18 @@
+"""Fisher information of the fitted encoding model per numerosity and condition.
+
+Fits a residual noise model to the single-trial data under the fitted nPRF
+parameters, then computes the encoding Fisher information I(n) over the
+numerosity grid (10-40) for the narrow and wide conditions (Fig. 5a left;
+its inverse square root is the plotted imprecision). Writes per-subject TSVs
+to derivatives/fisher_information2/.
+
+The production configuration for the paper used --spherical_noise (no
+correlations between voxels; see Methods, "fMRI-derived Fisher information").
+"""
 import argparse
 from pathlib import Path
 from neural_priors.utils.data import Subject
-from neural_priors.encoding_model2.fit_model import get_model, get_paradigm
+from neural_priors.encoding_model.fit_model import get_model, get_paradigm
 import pandas as pd
 import numpy as np
 from braincoder.utils import get_rsq
@@ -11,11 +22,11 @@ def main(subject, model_label, smoothed, fit_responses, bids_folder, spherical_n
 
     sub = Subject(subject, bids_folder=bids_folder)
 
-    pars = sub.get_prf_parameters_volume2(model_label, smoothed=smoothed, roi='NPCr', raw=True)
-    cvr2 = sub.get_prf_parameters_volume2(model_label, smoothed=smoothed, roi='NPCr', raw=False, par_keys=[])['cvr2'].squeeze()
-    print(cvr2)
+    pars = sub.get_prf_parameters_volume(model_label, smoothed=smoothed, roi=roi, response_fit=fit_responses, raw=True)
+    cvr2 = sub.get_prf_parameters_volume(model_label, smoothed=smoothed, roi=roi, response_fit=fit_responses)['cvr2'].squeeze()
+    # Only voxels with positive cross-validated R2 ("signal voxels") enter the
+    # noise model and the Fisher-information computation (see Methods).
     mask = cvr2 > 0.0
-    print(mask)
     pars = pars.loc[mask, :]
 
     # Create target folder
@@ -118,7 +129,8 @@ if __name__ == "__main__":
     parser.add_argument("--fit_responses", action='store_true', help="Whether to fit responses")
     parser.add_argument("--bids_folder", default='/data/ds-neuralpriors', type=Path, help="BIDS folder path")
     parser.add_argument("--separate_sigmas", action='store_true', help="Whether to fit separate sigmas for narrow and wide conditions")
+    parser.add_argument("--roi", default='NPCr', help="ROI mask to use")
 
     args = parser.parse_args()
     main(args.subject, args.model_label, args.smoothed, args.fit_responses, args.bids_folder, spherical_noise=args.spherical_noise,
-         separate_sigmas=args.separate_sigmas)
+         roi=args.roi, separate_sigmas=args.separate_sigmas)

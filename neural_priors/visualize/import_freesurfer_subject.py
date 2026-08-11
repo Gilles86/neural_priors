@@ -1,3 +1,9 @@
+"""
+One-time per-subject pycortex setup: imports the fMRIPrep FreeSurfer subject
+into the pycortex database as neuralpriors.sub-XX and builds the
+fsnative->T1w/EPI transforms. Prerequisite for all visualize_*.py scripts.
+"""
+
 import numpy as np
 import argparse
 from cortex import freesurfer

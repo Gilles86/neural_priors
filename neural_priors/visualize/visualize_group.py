@@ -1,3 +1,10 @@
+"""
+Group-level pycortex webGL viewer on fsaverage (Fig. 2a): shows the
+whole-brain group GIfTIs (r2, cvr2_count, preferred numerosity per condition)
+written by combine_subjects.ipynb, thresholded at r2 > 0.01 and
+cvr2_count > 0.2. Run from this directory (`from utils import ...`).
+"""
+
 import cortex
 import numpy as np
 import matplotlib.pyplot as plt
