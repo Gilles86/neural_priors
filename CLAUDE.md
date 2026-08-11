@@ -17,7 +17,7 @@ source activate neural_priors2
 pip install -e .
 ```
 
-Key dependencies: Python 3.9, TensorFlow 2.14, TensorFlow Probability, braincoder (PRF fitting), nilearn, nipype, GLMsingle.
+Key dependencies: Python 3.9, TensorFlow 2.15, TensorFlow Probability, braincoder (PRF fitting), nilearn, nipype, GLMsingle. Pinned specs: `environment.yml` (cluster) / `environment_silicon.yml` (local Mac); exact snapshots in `environments/*.lock.yml`.
 
 ## Running Scripts
 
@@ -32,16 +32,17 @@ python neural_priors/encoding_model/fit_model.py 01 \
 python neural_priors/encoding_model/fit_model_cv.py 01 \
     --bids_folder /data/ds-neuralpriors --model_label 31 --smoothed
 
-# Decode stimuli from brain activity
+# Decode stimuli from brain activity (production configuration)
 python neural_priors/encoding_model/decode.py 01 \
-    --bids_folder /data/ds-neuralpriors --model_label 31 --n_voxels 200
+    --bids_folder /data/ds-neuralpriors --model_label 31 --smoothed \
+    --fit_responses --spherical_noise --n_voxels 0
 
-# Extract parameters across subjects (writes to derivatives/extracted_pars/)
-python neural_priors/encoding_model/extract_pars.py \
-    --bids_folder /data/ds-neuralpriors --model_label 31 --smoothed
+# Extract parameters across subjects (writes to derivatives/extracted_pars/; model label is positional)
+python neural_priors/encoding_model/extract_pars.py 31 \
+    --bids_folder /data/ds-neuralpriors --smoothed
 
 # Write all parameters for main models into a single long-format summary TSV
-# (writes to derivatives/summary_tsvs/main_models_roi-NPCr_desc-groundtruth_parameters.tsv)
+# (writes to derivatives/summary_tsvs/main_models_roi-NPCr_desc-groundtruth_parameters.tsv.gz)
 python neural_priors/encoding_model/write_parameters_summary.py --smoothed
 
 # Run for a subset of models only
@@ -59,11 +60,11 @@ sbatch --array=1-41 neural_priors/encoding_model/slurm_jobs/fit_model.sh 31 --sm
 # Submit cross-validation
 sbatch --array=1-41 neural_priors/encoding_model/slurm_jobs/fit_model_cv.sh 31 --smoothed
 
-# Submit decoding (requires model label and n_voxels)
-sbatch --array=1-41 neural_priors/encoding_model/slurm_jobs/decode.sh 31 200
+# Submit decoding (requires model label and n_voxels; production config uses n_voxels=0)
+sbatch --array=1-41 neural_priors/encoding_model/slurm_jobs/decode.sh 31 0 --smoothed --fit_responses --spherical_noise
 
-# Batch submission of multiple models/configurations
-bash neural_priors/encoding_model/slurm_jobs/submit_jobs_2026-02-26.sh
+# Batch submission of the width-scaling sweep (models 115-135)
+bash neural_priors/encoding_model/slurm_jobs/submit_fixed_sd_scaling_jobs.sh
 ```
 
 Common flags: `--smoothed`, `--fit_responses`, `--censored`, `--spherical_noise`, `--separate_sigmas`.
@@ -138,7 +139,11 @@ The canonical set of models used in analyses, with descriptive labels:
 ## Output Structure
 
 Fitted parameters and results are written into the BIDS derivatives tree:
-- `derivatives/encoding_model/model{N}.smoothed/sub-{id}/func/` — per-subject NIfTI parameter maps
+- `derivatives/encoding_models/model{N}.smoothed/sub-{id}/func/` — per-subject NIfTI parameter maps
 - `derivatives/extracted_pars/group_roi-{roi}_model-{N}_desc-{desc}_parameters.tsv` — pre-extracted per-model group TSVs (created by `extract_pars.py`)
-- `derivatives/summary_tsvs/main_models_roi-{roi}_desc-{desc}_parameters.tsv` — long-format table of all parameters for all main models (created by `write_parameters_summary.py`; columns: `subject`, `model_label`, `model`, `response_fit`, `voxel`, plus all parameter columns)
+- `derivatives/summary_tsvs/main_models_roi-{roi}_desc-{desc}_parameters.tsv.gz` — long-format table of all parameters for all main models (created by `write_parameters_summary.py`; columns: `subject`, `model_label`, `model`, `response_fit`, `voxel`, plus all parameter columns)
 - `derivatives/decoding2/model{N}.smoothed/sub-{id}/func/` — decoding PDF files
+
+## Rebuttal / response-letter drafts (`notes/`)
+
+Draft texts for reviewer responses and Supplementary Information live in `notes/*.md`. `notes/` is **gitignored** (reviewer correspondence and paper PDFs must not reach the public repo). Formatting convention: **no hard line wrapping — write each paragraph as a single line**, so paragraphs can be copy-pasted directly into the rebuttal letter / manuscript. Headings, table rows, and list items keep their own lines as usual.
