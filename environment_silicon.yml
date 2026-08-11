@@ -1,27 +1,31 @@
+# Local macOS (Apple Silicon) environment: figure notebooks, revision
+# analyses, and small simulations. Production model fits ran on the cluster
+# environment (environment.yml); this env mirrors it functionally with the
+# TF-metal stack. Byte-level record of the env that produced the figures:
+# environments/local_neural_priors_silicon.lock.yml.
 name: neural_priors_silicon
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - python=3.11
   - numpy=1.26
-  - pandas
-  - seaborn
-  - matplotlib
-  - scipy
-  - scikit-learn
+  - pandas=3.0.1
+  - seaborn=0.13.2
+  - matplotlib=3.10
+  - scipy=1.17.1
+  - scikit-learn=1.8.0
   - jupyter
   - ipywidgets
   - pip
-  - pingouin
-  - nipype
+  - pingouin=0.6.0
+  - nipype=1.10.0
   - tqdm
   - pip:
       - tensorflow-macos==2.16.1
       - tensorflow-metal==1.1.0
       - tensorflow-probability==0.24.0
       - tf-keras==2.16.0
-      - tensorflow-addons
-      - nilearn
+      - tensorflow-addons==0.23.0
+      - nilearn==0.13.1
       - -e ./libs/braincoder
       - -e .

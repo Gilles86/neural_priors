@@ -1,22 +1,38 @@
-name: neural_priors
+# Cluster / Linux environment of record for the nPRF fitting, decoding and
+# GLMsingle stages (the environment named `neural_priors2` on the UZH
+# ScienceCluster, where all production fits for the paper were run).
+#
+# Versions are pinned to what actually produced the published results; the
+# byte-level record is environments/cluster_neural_priors2.lock.yml.
+#
+# braincoder is pinned to the commit used for the paper fits. For development,
+# install the submodule instead:  pip install -e libs/braincoder
+#
+# NB: run `conda env create -f environment.yml` from the repository root —
+# the final `-e .` installs the neural_priors package from the current directory.
+name: neural_priors2
 channels:
   - conda-forge
-  - defaults
 dependencies:
-  - python=3.9
-  - tensorflow=2.14
-  - tensorflow-probability
-  - pandas
-  - numpy
-  - seaborn
-  - matplotlib
-  - scipy
-  - scikit-learn
+  - python=3.9.19
+  - tensorflow=2.15.0        # on the cluster: the cuda120 build (GPU)
+  - tensorflow-probability=0.23.0
+  - keras=2.15.0
+  - numpy=1.26.4
+  - pandas=2.2.3
+  - scipy=1.13.1
+  - scikit-learn=1.6.1
+  - nilearn=0.11.1
+  - tqdm=4.67.1
   - jupyter
   - pip
-  - pingouin
-  - nipype
   - pip:
-      - tensorflow-addons
-      - tqdm
-      - nilearn
+      - matplotlib==3.9.4
+      - seaborn==0.13.2
+      - pingouin==0.5.5
+      - nipype==1.10.0
+      - glmsingle==1.2   # NB: the GLM stage historically ran in a separate cluster env (glmsingle is
+                         # absent from the lock file, and glm/cluster_jobs/*.sh activate that env, not
+                         # this one). Declared here so a fresh install can run the full pipeline.
+      - "braincoder @ git+https://github.com/Gilles86/braincoder.git@ed48b10ab8cfbba317dafc4e513e5bf23a84c802"
+      - -e .
