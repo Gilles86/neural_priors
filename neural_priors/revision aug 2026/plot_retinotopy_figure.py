@@ -11,7 +11,11 @@ their centers differ).
 
 Data: model 3 (shift ratio free per voxel, i.e. mu freely mapped in both
 conditions), ground-truth stimulus space, NPCr, smoothed, voxels with
-cvR2 > 0. Writes PDF + PNG to <bids>/derivatives/figures/.
+cvR2 > 0 AND 0 <= mu <= 40 in both conditions. The mu-range filter is applied
+once in main() (not just in the panel-c hexbin, as in the pre-2026-08-12
+version of this script) so that print_stats(), the panel-b histogram, and the
+panel-c hexbin all describe the same population. Writes PDF + PNG to
+<bids>/derivatives/figures/.
 """
 from pathlib import Path
 
@@ -112,23 +116,40 @@ def load_pars(model_label=3):
                        'group_roi-NPCr_desc-groundtruth_parameters.tsv',
                        sep='\t', index_col=[0, 1, 2, 3], header=[0, 1])
     pars = pars.xs(model_label, level='model_label')
-    return pars[pars[('cvr2', 'nan')] > 0.0]
+    pars = pars[pars[('cvr2', 'nan')] > 0.0]
+    n, w = pars[('mu', 'narrow')], pars[('mu', 'wide')]
+    return pars[(n >= 0) & (n <= 40) & (w >= 0) & (w <= 40)]
 
 
 def print_stats(pars):
     n, w = pars[('mu', 'narrow')].values, pars[('mu', 'wide')].values
+    subs = pars.index.get_level_values('subject_id')
+
     pred_eff = np.where(n < 10, n, (n - 10) * 2 + 10)
     pred_ret = n + 7.5
     ae_e, ae_r = np.abs(w - pred_eff), np.abs(w - pred_ret)
-    subs = pars.index.get_level_values('subject_id')
     per_sub = pd.DataFrame({'eff': ae_e, 'ret': ae_r, 'sub': subs}).groupby('sub').median()
     print(f'n voxels: {len(pars)}, n subjects: {per_sub.shape[0]}')
     print(f'median mu narrow/wide: {np.median(n):.2f} / {np.median(w):.2f}')
+    above_narrow, above_wide = (n > 17.5).mean(), (w > 25).mean()
+    print(f'pct above respective range center (narrow/wide, mean): '
+          f'{above_narrow:.1%} / {above_wide:.1%} (mean {(above_narrow + above_wide) / 2:.1%})')
     print(f'median abs error: efficient {np.median(ae_e):.2f}, retinotopic {np.median(ae_r):.2f}')
     print(f'voxels better fit by efficient model: {(ae_e < ae_r).mean():.1%}')
     print(f'subjects with lower median error under efficient: '
           f'{(per_sub.eff < per_sub.ret).sum()}/{len(per_sub)}')
     print(stats.wilcoxon(per_sub.eff, per_sub.ret))
+
+    # Within-presented-range (10 <= mu_narrow <= 25) per-participant regression
+    # of the shift (mu_wide - mu_narrow) on mu_narrow: multiplicative range
+    # adaptation predicts a positive slope, additive retinotopic shift predicts 0.
+    inrange = (n >= 10) & (n <= 25)
+    shift_df = pd.DataFrame({'n': n[inrange], 'shift': w[inrange] - n[inrange], 'sub': subs[inrange]})
+    slopes = shift_df.groupby('sub').apply(
+        lambda d: stats.linregress(d['n'], d['shift']).slope if len(d) > 1 else np.nan).dropna()
+    t = stats.ttest_1samp(slopes, 0)
+    print(f'within-range shift~mu_narrow slope: n_voxels={inrange.sum()}, n_subj={len(slopes)}, '
+          f'mean slope={slopes.mean():.3f}, t({len(slopes) - 1})={t.statistic:.2f}, p={t.pvalue:.4f}')
 
 
 def plot_histograms(pars, ax):
@@ -165,8 +186,7 @@ def plot_histograms(pars, ax):
 
 def plot_model_comparison(pars, ax, fig):
     n, w = pars[('mu', 'narrow')].values, pars[('mu', 'wide')].values
-    keep = (n >= 0) & (n <= 40) & (w >= 0) & (w <= 40)
-    hb = ax.hexbin(n[keep], w[keep], gridsize=(60 * np.array([np.sqrt(3), 1])).astype(int),
+    hb = ax.hexbin(n, w, gridsize=(60 * np.array([np.sqrt(3), 1])).astype(int),
                    linewidths=0., cmap='Blues', mincnt=1, edgecolors='none',
                    norm=mpl.colors.PowerNorm(0.5, vmin=0))
 

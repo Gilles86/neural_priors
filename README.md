@@ -205,7 +205,7 @@ The hierarchical model estimates group- and subject-level response mean/SD per n
 | Model recovery, width parameter (Fig. S9) | `neural_priors/revision aug 2026/simulate_data_sd.py` + `recovery_bias_sd.ipynb`; final figure layouts in `plot_recovery_figures.py`, per-voxel μ-recovery panel in `plot_pervoxel_mu_figure.py` | model-15 fits |
 | Censored-fit robustness checks (SI) | `neural_priors/revision feb 2026/censored_fits_mu.ipynb`, `censored_fits_sd.ipynb` | stage 4 with `--censored` |
 | Left-NPC replication (SI) | `neural_priors/revision feb 2026/NPCl.ipynb` | stage 4 on NPCl |
-| Retinotopic-confound controls (Discussion + SI) | `neural_priors/revision feb 2026/retinotopic_mus.ipynb`; SI figures (round 2): `neural_priors/revision aug 2026/plot_retinotopy_figure.py`, `plot_retinotopic_figure.py` | summary TSV |
+| Retinotopic-confound controls (Discussion + SI) | `neural_priors/revision feb 2026/retinotopic_mus.ipynb`; SI figure (round 2): `neural_priors/revision aug 2026/plot_retinotopy_figure.py` | summary TSV |
 | Per-participant behavioral estimate/SD curves (SI) | `notebooks/stan_output.ipynb` § "individual" (`subjs_indiv_estimates.pdf`, `subjs_indiv_sd.pdf`) | Stan fit (stage 9) |
 | Median-cvR² model-comparison robustness check | `notebooks/fmri_models_analysis.ipynb` § "Median cvR2" (`models_fits_mediancvr2.pdf`) | summary TSV |
 | Participant demographics (Methods) | `notebooks/participant_info.ipynb` | `participants.tsv` |
