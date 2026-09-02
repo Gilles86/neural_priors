@@ -144,7 +144,12 @@ N_X_BINS = 32
 X_EDGES = np.linspace(-X_LIM, X_LIM, N_X_BINS + 1)
 X_CENTERS = 0.5 * (X_EDGES[:-1] + X_EDGES[1:])
 
-DATA_DIR = Path('/data/ds-neuralpriors/derivatives/value_comparison')
+# Overridable so the cluster does not need its working tree edited (which
+# breaks `git pull` and the sync-by-commit rule).  Set NP_VALUE_COMPARISON_DIR
+# in the SLURM script to point at the share.
+DATA_DIR = Path(os.environ.get(
+    'NP_VALUE_COMPARISON_DIR',
+    '/data/ds-neuralpriors/derivatives/value_comparison'))
 ROI_LABEL = {'NPCr': 'NPC (R)', 'NPCl': 'NPC (L)',
              'wholebrain': 'Whole brain (outside NPC)'}
 
@@ -176,7 +181,9 @@ def load_subject(subject, roi='NPCr', data_dir=DATA_DIR, smoothed=False,
     return B, n, run_id, rw
 
 
-TMSRISK_DIR = Path('/data/ds-tmsrisk/derivatives/value_comparison')
+TMSRISK_DIR = Path(os.environ.get(
+    'TMSRISK_VALUE_COMPARISON_DIR',
+    '/data/ds-tmsrisk/derivatives/value_comparison'))
 
 
 def load_subject_tmsrisk(subject, roi='NPCr', data_dir=TMSRISK_DIR, session=1,

@@ -30,6 +30,8 @@ export TMPDIR="/scratch/$USER/tmp/${SLURM_JOB_ID:-manual}_${SLURM_ARRAY_TASK_ID:
 mkdir -p "$TMPDIR"
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 export KERAS_BACKEND=tensorflow
+# the extracted betas live on the share, not under /data as they do locally
+export NP_VALUE_COMPARISON_DIR=/shares/zne.uzh/gdehol/ds-neuralpriors/derivatives/value_comparison
 
 case $SLURM_ARRAY_TASK_ID in
   1) DATASET=neural_priors_narrow ;;
