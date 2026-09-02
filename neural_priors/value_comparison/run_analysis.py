@@ -161,7 +161,9 @@ def analyse_subject_roi(s, roi, sample, n_perm, store_examples,
 
 
 def get_subjects_for(dataset, data_dir=None):
-    if dataset == 'neural_priors':
+    # every neural_priors variant (pooled, narrow, narrow-log) uses the same
+    # subjects; only the trial subset and the stimulus axis differ
+    if dataset.startswith('neural_priors'):
         return list(get_all_subject_ids())
     # tms_risk hardcodes subjects 22 and 49 as outliers (tms_risk/utils/data.py)
     files = sorted(Path(M.TMSRISK_DIR).glob('sub-*_ses-1_trials.npz'))
