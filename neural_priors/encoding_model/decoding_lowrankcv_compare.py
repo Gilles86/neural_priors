@@ -187,7 +187,7 @@ def make_figure(sm, nf, fig_fn):
             ax.axhline(.95, color='0.6', lw=.8); ax.axvline(.95, color='0.6', lw=.8)
         if metric == 'logscore':
             ax.axhline(0, color='0.6', lw=.8); ax.axvline(0, color='0.6', lw=.8)
-        ax.set_xlabel('Production noise model (ResidualFitter, spherical)')
+        ax.set_xlabel('Production noise model (paired refit)')
         ax.set_ylabel('LowRankNoise (CV k, T)')
         ax.set_title(title, loc='left', fontsize=9)
     axes[0, 0].legend(frameon=False, fontsize=7)
@@ -205,16 +205,24 @@ def make_figure(sm, nf, fig_fn):
     kc.plot.bar(ax=ax, color=[pal[c] for c in kc.columns], legend=False)
     ax.set_xlabel('Chosen rank k'); ax.set_ylabel('Folds')
     ax.set_title('Chosen rank', loc='left', fontsize=9)
-    # posterior SD by range
+    # posterior spread by range: full grid (solid) and paper MAD (dashed)
     ax = axes[1, 2]
-    s2 = s[s.config == 'responses'].groupby(['subject', 'method', 'range'])['mad_paper'].mean().reset_index()
-    s2 = s2[s2.method.isin(['reference', 'lowrank'])]
-    s2['Range'] = s2['range'].map({0.0: 'Narrow', 1.0: 'Wide (x ≤ 25)'})
-    sns.pointplot(data=s2, x='Range', y='mad_paper', hue='method', ax=ax, dodge=.2,
-                  palette={'reference': '0.4', 'lowrank': '#1f4e79'}, errorbar=('ci', 95))
-    ax.set_ylabel('Posterior MAD (items)'); ax.set_xlabel('')
+    d = s[s.method.isin(['reference', 'lowrank'])]
+    cols = {'reference': '0.45', 'lowrank': '#1f4e79'}
+    for (m, cfg), dd in d.groupby(['method', 'config']):
+        if cfg != 'responses':
+            continue
+        g = dd.groupby('range')
+        for y, ls in [('post_sd', '-'), ('mad_paper', '--')]:
+            mu = dd.groupby(['subject', 'range'])[y].mean().groupby('range')
+            ax.errorbar([0, 1], mu.mean().values, yerr=1.96 * mu.sem().values, color=cols[m], ls=ls,
+                        marker='o', ms=4, label=f"{'LowRankNoise' if m == 'lowrank' else 'Production'}, "
+                                                f"{'full-grid SD, all trials' if y == 'post_sd' else 'paper MAD (truncated at 25)'}")
+    ax.set_xticks([0, 1]); ax.set_xticklabels(['Narrow', 'Wide'])
+    ax.set_xlim(-.4, 1.4)
+    ax.set_ylabel('Posterior spread (items)')
     ax.set_title('Decoded uncertainty by prior range', loc='left', fontsize=9)
-    ax.legend(frameon=False, fontsize=7)
+    ax.legend(frameon=False, fontsize=6)
     sns.despine(fig)
     fig.tight_layout()
     fig.savefig(fig_fn, dpi=200)
