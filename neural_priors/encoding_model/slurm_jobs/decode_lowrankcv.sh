@@ -46,4 +46,4 @@ cd $HOME/git/neural_priors/neural_priors/encoding_model
 python decode.py $SUB --bids_folder /shares/zne.uzh/gdehol/ds-neuralpriors \
     --model_label 31 --smoothed --spherical_noise --n_voxels 0 $FR_FLAG \
     --noise_model lowrank_cv --tag $TAG --inner_params $INNER --lowrank_k $LOWRANK_K \
-    --inner_groups $INNER_GROUPS ${EXTRA}
+    --inner_groups $INNER_GROUPS ${K_GRID:+--k_grid $K_GRID} ${EXTRA}

@@ -225,7 +225,8 @@ def get_decoding_paradigm(sub, fit_responses=False, drop_levels=True):
 
 def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors', smoothed=True, debug=False, fit_responses=False,
          n_voxels=100, spherical_noise=False, separate_sigmas=False, subtract_wt_baseline=False, lambd=0.0,
-         noise_model='residualfitter', tag='', lowrank_k='cv', inner_params='fixed', inner_groups='run'):
+         noise_model='residualfitter', tag='', lowrank_k='cv', inner_params='fixed', inner_groups='run',
+         k_grid=None):
     """
     Run leave-one-run-out Bayesian decoding for one subject.
 
@@ -531,7 +532,8 @@ def main(subject, model_label=3, roi='NPCr', bids_folder='/data/ds-neural_priors
                 noise = LowRankNoise.fit(model, train_data, train_paradigm, gd_pars,
                                          stimulus_range=stimulus_range, groups=groups,
                                          inner_parameters=inner,
-                                         k=lowrank_k if lowrank_k == 'cv' else int(lowrank_k))
+                                         k=lowrank_k if lowrank_k == 'cv' else int(lowrank_k),
+                                         **({} if k_grid is None else dict(k_grid=tuple(k_grid))))
                 t_fit = time.time() - t0
                 print(noise.summary())
                 lr_ll = noise.grid_log_likelihood(test_data, grid_pred)
@@ -603,8 +605,11 @@ if __name__ == '__main__':
                              '(fixed = outer-fold fit; refit = refit model per inner fold)')
     parser.add_argument('--inner_groups', default='run', choices=['run', 'run2'],
                         help='lowrank_cv only: inner CV leaves out one original run (default) or one run2 pair')
+    parser.add_argument('--k_grid', type=int, nargs='*', default=None,
+                        help='lowrank_cv only: candidate ranks (default: braincoder DEFAULT_K_GRID)')
     args = parser.parse_args()
 
     main(subject=args.subject, model_label=args.model_label, bids_folder=args.bids_folder, smoothed=args.smoothed, debug=args.debug, fit_responses=args.fit_responses, n_voxels=args.n_voxels, spherical_noise=args.spherical_noise, separate_sigmas=args.separate_sigmas, subtract_wt_baseline=args.subtract_wt_baseline, lambd=args.lambd,
          noise_model=args.noise_model, tag=args.tag, lowrank_k=args.lowrank_k,
-         inner_params=args.inner_params, inner_groups=args.inner_groups)
+         inner_params=args.inner_params, inner_groups=args.inner_groups,
+         k_grid=args.k_grid)
