@@ -152,6 +152,18 @@ def trialwise(t, cfg='groundtruth'):
     return pd.DataFrame(rows)
 
 
+def range_uncertainty(t):
+    """Prior-range effect on decoded uncertainty without the paper's truncation:
+    posterior SD on the full conditional grid (10-40), trials with truth <= 25."""
+    rows = []
+    for (cfg, m), d in t[t['n'] <= NARROW_UPPER].groupby(['config', 'method']):
+        w = d.groupby(['subject', 'range'])['sd'].mean().unstack('range')
+        tt = stats.ttest_rel(w[1.0], w[0.0])
+        rows.append(dict(config=cfg, method=m, sd_narrow=w[0.0].mean(), sd_wide=w[1.0].mean(),
+                         t=tt.statistic, p=tt.pvalue, n=len(w)))
+    return pd.DataFrame(rows)
+
+
 def make_figure(sm, nf, fig_fn):
     import matplotlib
     matplotlib.use('Agg')
@@ -264,6 +276,10 @@ def main(data_dir, fig_fn, suffix=''):
     cmt = pd.DataFrame(rows)
     print(cmt.round(3).to_string())
     cm.to_csv(op.join(data_dir, f'decoding_lowrankcv{suffix}_dr.tsv'), sep='\t')
+
+    ru = range_uncertainty(t)
+    print(ru.round(3).to_string())
+    ru.to_csv(op.join(data_dir, f'decoding_lowrankcv{suffix}_range_sd.tsv'), sep='\t', index=False)
 
     if t.response.notna().any():
         beh = behaviour_table(t)
