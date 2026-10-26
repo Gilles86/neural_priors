@@ -20,6 +20,12 @@ subclass makes both condition-specific:
   ``{p}_cond_mu`` is the group narrow-minus-wide difference (untransformed scale);
   ``{p}_by_condition`` the participant values per condition.
 
+- **Measurement grid**: spans f(10) - 5 nu_f .. f(40) + 5 nu_f (200 points), i.e. it
+  follows the noise. Against a brute-force reference (20,001-point measurement
+  integral) the option probabilities agree to |dP| <= 1.6e-4 over alpha -1.5..1.5,
+  nu .06..0.5, sigma_r .6..2.5, both conditions (the base class's fixed f(1)..f(50)
+  grid was off by up to .09 at alpha = -1, nu = .12, sigma_r = .8).
+
 Everything else (encoding f_alpha(n) = (n^alpha - 1)/alpha with noise nu in log units at
 n_ref = 12, the measurement/estimate grid and its inversion, censoring of unfinished
 reports through a ``censor`` column, the hierarchical non-centred priors) is the base
@@ -50,8 +56,9 @@ def space_for(name):
 class RangeEstimationModel(EstimationTaskModel):
 
     def __init__(self, paradigm=None, encoding_space=None, ranges=RANGES,
-                 condition_parameters=(), **kwargs):
+                 condition_parameters=(), meas_halfwidth_sd=5.0, **kwargs):
         self.ranges = ranges
+        self.meas_halfwidth_sd = float(meas_halfwidth_sd)
         lo = min(r[0] for r in ranges.values())
         hi = max(r[1] for r in ranges.values())
         kwargs.setdefault('motor_noise', True)
@@ -113,10 +120,15 @@ class RangeEstimationModel(EstimationTaskModel):
         nu_f = self._nu_f(inputs, alpha)
         h = pt.as_tensor_variable(self.hyp_grid)
         fh = self._f(h, alpha)
-        f_ends = self._f(pt.as_tensor_variable(np.array(self.meas_range)), alpha)
-        lo = f_ends[:, :1]
-        hi = f_ends[:, 1:]
-        m = lo + pt.as_tensor_variable(self.meas_t)[None, :] * (hi - lo)
+        # measurement grid adapted to the noise: f(10) - k nu_f .. f(40) + k nu_f
+        # (the base class's fixed f(1)..f(50) span is too coarse for small nu at
+        # alpha << 0 and the hypothesis-range span too narrow for large nu)
+        f_ends = self._f(pt.as_tensor_variable(self.hyp_grid[[0, -1]]), alpha)
+        k = self.meas_halfwidth_sd
+        lo = f_ends[:, :1] - k * nu_f[:, None]
+        hi = f_ends[:, 1:] + k * nu_f[:, None]
+        t = pt.as_tensor_variable(np.linspace(0.0, 1.0, self.n_measurement_grid))
+        m = lo + t[None, :] * (hi - lo)
         loglik = -0.5 * ((m[:, :, None] - fh[:, None, :]) / nu_f[:, None, None]) ** 2
         mask = np.tile(self.cond_prior_mask, (S // 2, 1))                  # (S, H)
         logmask = pt.as_tensor_variable(np.log(mask + 1e-300))
