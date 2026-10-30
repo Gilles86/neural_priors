@@ -14,8 +14,9 @@ and the low-rank study's per-trial table (notes/data/decoding_lowrankcv_refit_
 trials.tsv.gz, method 'lowrank', cvR^2 > 0 voxels only).
 
 Posterior over n conditional on the trial's range (production convention),
-full grid; per participant x range r(E, truth) and MAE, then averaged over
-the two ranges. truth = response in the paper configuration, the presented
+full grid; per participant x range r(E, truth) and MAE, and the paper's
+convention (r_paper, mae_paper: narrow posterior truncated at 25) (range = narrow /
+wide), plus their mean over the two ranges (range = both). truth = response in the paper configuration, the presented
 numerosity in the ground-truth configuration.
 
   python decoding_nvoxels_collect.py --bids_folder /data/ds-neuralpriors
@@ -39,12 +40,17 @@ def per_subject(d, truth):
     for keys, g in d.groupby(['config', 'noise', 'n_voxels', 'subject', 'range']):
         ok = g.E.notna() & g[truth].notna()
         g = g[ok]
+        p = g.dropna(subset=['E_paper'])
         rows.append(dict(zip(['config', 'noise', 'n_voxels', 'subject', 'range'], keys),
                          r=np.corrcoef(g.E, g[truth])[0, 1], mae=(g.E - g[truth]).abs().mean(),
+                         r_paper=np.corrcoef(p.E_paper, p[truth])[0, 1],
+                         mae_paper=(p.E_paper - p[truth]).abs().mean(),
                          post_sd=g.sd.mean(), n_trials=len(g)))
     out = pd.DataFrame(rows)
-    return (out.groupby(['config', 'noise', 'n_voxels', 'subject'])[['r', 'mae', 'post_sd']]
-            .mean().reset_index())
+    out['range'] = out['range'].map({0.0: 'narrow', 1.0: 'wide'})
+    both = (out.groupby(['config', 'noise', 'n_voxels', 'subject'])[['r', 'mae', 'r_paper', 'mae_paper', 'post_sd']]
+            .mean().reset_index().assign(range='both'))
+    return pd.concat([out.drop(columns='n_trials'), both], ignore_index=True)
 
 
 def main(bids_folder, lowrank_trials, out):
@@ -66,7 +72,7 @@ def main(bids_folder, lowrank_trials, out):
                                             validate='1:1')
                 tr.index = lp.index
                 s = summarise(lp, tr, [], temperature=1.0)
-                s = pd.concat([tr[['range', 'n', 'response']], s[['E', 'sd']]], axis=1)
+                s = pd.concat([tr[['range', 'n', 'response']], s[['E', 'sd', 'E_paper']]], axis=1)
                 s = s.assign(subject=sub, config=config, noise=noise, n_voxels=nv)
                 rows.append(s.reset_index(drop=True))
         print(sub, flush=True)
@@ -80,7 +86,8 @@ def main(bids_folder, lowrank_trials, out):
         res.append(per_subject(d[d.config == config], truth))
     res = pd.concat(res, ignore_index=True)
     res.to_csv(out, sep='\t', index=False, float_format='%.5g')
-    print(res.groupby(['config', 'noise', 'n_voxels'])[['r', 'mae']].agg(['mean', 'count']).round(3))
+    print(res.groupby(['config', 'range', 'noise', 'n_voxels'])[['r', 'mae']]
+          .agg(['mean', 'count']).round(3).to_string())
 
 
 if __name__ == '__main__':
