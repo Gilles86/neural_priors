@@ -166,6 +166,158 @@ def tempered_posterior(ll, temperature):
     p = np.exp(a)
     return p / p.sum(1, keepdims=True)
 
+def compare_noise_models(subject, model_label=31, roi='NPCr', bids_folder='/data/ds-neuralpriors',
+                         smoothed=True, fit_responses=False, voxel_sets=('0', '500', '1000', 'all'),
+                         tag='wholeroi', k_grid=(0, 1, 2, 5, 10, 20, 40, 80, 120, 160), debug=False):
+    """Opt-in (``--noise_model compare``): three noise models on the same voxels and folds.
+
+    Per outer fold (production folds) the encoding model is fitted ONCE on every
+    ROI voxel with nonzero variance (model 31 has no shared parameters, so this
+    equals per-subset fits up to optimiser noise). Each voxel set is then
+    decoded with, on the same parameters:
+
+      spherical  ResidualFitter(spherical=True)   (production)
+      jehee      ResidualFitter(spherical=False), lambd = 0
+                 (rho tau tau' + (1 - rho) diag(tau^2) + sigma^2 W W'; old default)
+      lowrank    braincoder LowRankNoise, k and T by nested leave-one-run-out CV
+                 inside the training runs, inner parameters fixed (outer fit)
+
+    Voxel sets: '0' = cvR^2 > 0 from the production cache, N = top N by training
+    R^2 (skipped when N >= ROI size), 'all' = whole ROI. All log-likelihood grids
+    are untempered; the lowrank CV temperature is in the noisefit log. Output:
+    derivatives/decoding2/model31.smoothed.spherical_noise[.fit_responses].<tag>/
+      sub-<s>_mask-<roi>_nvoxels-<set>_desc-{spherical,jehee,lowrank}_loglik.tsv
+      sub-<s>_mask-<roi>_desc-noisefit_log.tsv, _desc-cvscores.tsv
+    """
+    assert tag, 'compare mode needs a tag (never write into the production tree)'
+    LowRankNoise = load_lowrank_noise()
+    sub = Subject(subject_id=subject, bids_folder=bids_folder)
+    bids_folder = Path(bids_folder)
+    max_n_iterations = 100 if debug else 2000
+    max_noise_iter = 100 if debug else 20000
+
+    key = f'model{model_label}' + ('.smoothed' if smoothed else '') + '.spherical_noise' \
+        + ('.fit_responses' if fit_responses else '') + f'.{tag}'
+    target_dir = bids_folder / 'derivatives' / 'decoding2' / key / f'sub-{subject}' / 'func'
+    target_dir.mkdir(parents=True, exist_ok=True)
+    cvr2_key = f'model{model_label}' + ('.smoothed' if smoothed else '') + \
+        ('.fit_responses' if fit_responses else '')
+    cvr2_cache_dir = bids_folder / 'derivatives' / 'decoding2' / cvr2_key / f'sub-{subject}' / 'func'
+
+    paradigm = get_decoding_paradigm(sub, fit_responses=fit_responses)
+    paradigm_full = get_decoding_paradigm(sub, fit_responses=fit_responses, drop_levels=False)
+    data = sub.get_single_trial_estimates(session=None, smoothed=smoothed)
+    masker = sub.get_volume_mask(roi=roi, epi_space=True, return_masker=True)
+    data = pd.DataFrame(masker.fit_transform(data), index=paradigm.index).astype(np.float32)
+    keep = data.std() > 0
+    data = data.loc[:, keep]
+    n_roi = data.shape[1]
+    print(f'sub-{subject}: {n_roi} ROI voxels with nonzero variance ({(~keep).sum()} dropped)')
+
+    stimulus_range = np.sort(paradigm['x'].unique())
+    stimulus_range = np.stack([np.repeat(stimulus_range, 2),
+                               np.stack(np.tile([0, 1], len(stimulus_range)), axis=0)], axis=1)
+    stimulus_mi = pd.MultiIndex.from_arrays(stimulus_range.T, names=['n', 'range'])
+
+    lls = {}
+    noise_log, cv_tables = [], []
+    stem = f'sub-{subject}_mask-{roi}'
+
+    folds = list(paradigm.groupby(level=['session', 'run2']).groups.keys())
+    for test_session, test_run in folds:
+        t_fold = time.time()
+        print(f'Fold: session {test_session} run2 {test_run}', flush=True)
+        test_data = data.loc[(test_session, test_run)].copy()
+        test_paradigm = paradigm.loc[(test_session, test_run)].copy()
+        train_data, train_paradigm = data.drop((test_session, test_run)), paradigm.drop((test_session, test_run))
+        fold_mask = ((paradigm_full.index.get_level_values('session') == test_session) &
+                     (paradigm_full.index.get_level_values('run2') == test_run))
+        test_paradigm_full = paradigm_full[fold_mask]
+        idx = pd.MultiIndex.from_arrays([
+            test_paradigm_full.index.get_level_values('session'),
+            test_paradigm_full.index.get_level_values('run'),
+            test_paradigm_full.index.get_level_values('trial_nr'),
+            test_paradigm['x'].values, test_paradigm['range'].values],
+            names=['session', 'run', 'trial_nr', 'x', 'range'])
+        train_full = paradigm_full[~fold_mask]
+        groups = np.asarray(train_full.index.get_level_values('session').astype(int).astype(str) + '_' +
+                            train_full.index.get_level_values('run').astype(int).astype(str))
+
+        cvr2_fn = cvr2_cache_dir / f'sub-{subject}_ses-{test_session}_run2-{test_run}_mask-{roi}_desc-cvr2_pars.tsv'
+        if not cvr2_fn.exists():
+            cvr2_fn = target_dir / cvr2_fn.name
+        if cvr2_fn.exists():
+            cvr2 = pd.read_csv(cvr2_fn, sep='\t', index_col=0).squeeze('columns')
+        else:
+            print(f'no cached cvr2 ({cvr2_fn.name}); computing it into {target_dir}')
+            cvr2 = fit_model_cv(train_data, train_paradigm, model_label, max_n_iterations=max_n_iterations)
+            cvr2.to_csv(cvr2_fn, sep='\t')
+        cvr2.index = cvr2.index.astype(data.columns.dtype)
+        cvr2_sel = data.columns[data.columns.isin(cvr2.index[cvr2 > 0.0])]
+
+        t0 = time.time()
+        gd_pars = fit_model(model_label, get_model(model_label), train_data, train_paradigm,
+                            max_n_iterations=max_n_iterations)
+        t_enc = time.time() - t0
+        pred = get_model(model_label).predict(paradigm=train_paradigm, parameters=gd_pars)
+        r2 = get_rsq(train_data, pred)
+        r2 = r2[r2 < 1.0]
+        rank = r2.sort_values(ascending=False).index
+
+        sets = []
+        for vs in voxel_sets:
+            if vs == '0':
+                sets.append(('0', cvr2_sel))
+            elif vs == 'all':
+                sets.append(('all', data.columns))
+            elif int(vs) < n_roi:
+                sets.append((vs, rank[:int(vs)]))
+
+        for label, sel in sets:
+            pars = gd_pars.loc[sel]
+            tr_d, te_d = train_data.loc[:, sel], test_data.loc[:, sel]
+            model = get_model(model_label)
+            model.init_pseudoWWT(stimulus_range, pars)
+            add_grid_predictor(model, train_paradigm)
+            grid_pred = model.predict_stimulus_grid(stimulus_range, parameters=pars)
+            row = dict(session=test_session, run2=test_run, n_voxels=label, n_selected=len(sel),
+                       n_roi=n_roi, encoding_seconds=t_enc)
+            for noise, spherical in (('spherical', True), ('jehee', False)):
+                t0 = time.time()
+                rf = ResidualFitter(model, tr_d, train_paradigm, parameters=pars, lambd=0.0)
+                omega, dof = rf.fit(init_sigma2=0.1, init_dof=10.0, method='t', learning_rate=0.05,
+                                    spherical=spherical, max_n_iterations=max_noise_iter)
+                ll = mvt_grid_loglik(te_d.values, grid_pred, np.asarray(omega), np.asarray(dof).item())
+                lls.setdefault((label, noise), []).append(pd.DataFrame(ll, index=idx, columns=stimulus_mi))
+                row[f'dof_{noise}'] = float(np.asarray(dof))
+                row[f'{noise}_seconds'] = time.time() - t0
+            t0 = time.time()
+            noise = LowRankNoise.fit(model, tr_d, train_paradigm, pars, stimulus_range=stimulus_range,
+                                     groups=groups, inner_parameters=None, k='cv', k_grid=tuple(k_grid))
+            lr_ll = noise.grid_log_likelihood(te_d, grid_pred)
+            lls.setdefault((label, 'lowrank'), []).append(pd.DataFrame(lr_ll, index=idx, columns=stimulus_mi))
+            row.update(k=noise.k, temperature=noise.temperature,
+                       dof_lowrank=np.nan if noise.dof is None else noise.dof,
+                       cv_best=float(noise.cv_scores_.values.max()),
+                       lowrank_seconds=time.time() - t0)
+            cv = noise.cv_scores_.stack().rename('cv_score').reset_index()
+            cv.insert(0, 'n_voxels', label)
+            cv.insert(0, 'run2', test_run)
+            cv.insert(0, 'session', test_session)
+            cv_tables.append(cv)
+            noise_log.append(row)
+            print({k: (round(v, 2) if isinstance(v, float) else v) for k, v in row.items()}, flush=True)
+
+        # write cumulatively after every fold (progress + survives a wall-time kill)
+        for (label, nm), tabs in lls.items():
+            pd.concat(tabs).to_csv(target_dir / f'{stem}_nvoxels-{label}_desc-{nm}_loglik.tsv', sep='\t')
+        pd.DataFrame(noise_log).to_csv(target_dir / f'{stem}_desc-noisefit_log.tsv', sep='\t', index=False)
+        pd.concat(cv_tables).to_csv(target_dir / f'{stem}_desc-cvscores.tsv', sep='\t', index=False)
+        print(f'  fold done in {time.time() - t_fold:.0f}s', flush=True)
+
+    print(pd.DataFrame(noise_log).to_string())
+
+
 def get_decoding_paradigm(sub, fit_responses=False, drop_levels=True):
     """
     Return the stimulus paradigm DataFrame with a 'run2' cross-validation index.
@@ -593,9 +745,15 @@ if __name__ == '__main__':
                         help='Subtract per-voxel baseline from basis predictions before computing WWT')
     parser.add_argument('--lambd', type=float, default=0.0,
                         help='Blend weight for empirical sample covariance (0=parametric only, 1=empirical only)')
-    parser.add_argument('--noise_model', default='residualfitter', choices=['residualfitter', 'lowrank_cv'],
+    parser.add_argument('--noise_model', default='residualfitter',
+                        choices=['residualfitter', 'lowrank_cv', 'compare'],
                         help='residualfitter = production; lowrank_cv = braincoder LowRankNoise with '
-                             'nested-CV rank and temperature (opt-in study; needs --tag)')
+                             'nested-CV rank and temperature (opt-in study; needs --tag); compare = '
+                             'spherical + Jehee + LowRankNoise on the same voxel sets (--voxel_sets, '
+                             'incl. the whole ROI) and folds, see compare_noise_models()')
+    parser.add_argument('--voxel_sets', nargs='*', default=['0', '500', '1000', 'all'],
+                        help="compare only: '0' = cvR2 > 0 (production cache), N = top N by training "
+                             "R2 (skipped if >= ROI size), 'all' = whole ROI (nonzero-variance voxels)")
     parser.add_argument('--tag', default='',
                         help='suffix for a separate derivatives tree (required for lowrank_cv)')
     parser.add_argument('--lowrank_k', default='cv',
@@ -608,6 +766,15 @@ if __name__ == '__main__':
     parser.add_argument('--k_grid', type=int, nargs='*', default=None,
                         help='lowrank_cv only: candidate ranks (default: braincoder DEFAULT_K_GRID)')
     args = parser.parse_args()
+
+    if args.noise_model == 'compare':
+        assert args.model_label == 31 and args.spherical_noise and not args.separate_sigmas
+        compare_noise_models(args.subject, model_label=args.model_label, bids_folder=args.bids_folder,
+                             smoothed=args.smoothed, fit_responses=args.fit_responses,
+                             voxel_sets=args.voxel_sets, tag=args.tag or 'wholeroi',
+                             debug=args.debug,
+                             **({} if args.k_grid is None else dict(k_grid=args.k_grid)))
+        raise SystemExit(0)
 
     main(subject=args.subject, model_label=args.model_label, bids_folder=args.bids_folder, smoothed=args.smoothed, debug=args.debug, fit_responses=args.fit_responses, n_voxels=args.n_voxels, spherical_noise=args.spherical_noise, separate_sigmas=args.separate_sigmas, subtract_wt_baseline=args.subtract_wt_baseline, lambd=args.lambd,
          noise_model=args.noise_model, tag=args.tag, lowrank_k=args.lowrank_k,
