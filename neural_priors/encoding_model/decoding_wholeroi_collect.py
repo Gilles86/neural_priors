@@ -69,6 +69,10 @@ def append_missing(new_fn, main_fn):
     main = pd.read_csv(main_fn, sep='\t', dtype={'subject': str, 'n_voxels': str})
     bak = main_fn + time.strftime('.bak-%Y%m%d-%H%M%S')
     shutil.copy(main_fn, bak)
+    # the main table's lowrank cvR2 > 0 cell is the `refit` study; the fixed-inner series of
+    # this run is also added in full as 'lowrank_fixed' (like-for-like across voxel sets)
+    new = pd.concat([new, new[new.noise == 'lowrank'].assign(noise='lowrank_fixed')],
+                    ignore_index=True)
     have = set(map(tuple, main[['config', 'noise', 'n_voxels']].drop_duplicates().values))
     add = new[[(c, n, v) not in have for c, n, v in new[['config', 'noise', 'n_voxels']].values]]
     out = pd.concat([main, add[main.columns.intersection(add.columns)]], ignore_index=True)
