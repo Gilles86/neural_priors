@@ -15,7 +15,7 @@
 # the whole NPCr. Output: derivatives/decoding2/model31.smoothed.spherical_noise
 # [.fit_responses].<TAG>/ (never the production tree).
 #
-#   sbatch --array=1-10,12-22,24-41 --export=ALL,FIT_RESPONSES=1 decode_wholeroi.sh
+#   FIT_RESPONSES=1 sbatch --array=1-10,12-22,24-41 decode_wholeroi.sh
 # Overrides: FIT_RESPONSES=0 (ground truth), TAG=wholeroi, SETS="0 500 1000 all",
 #            K_GRID="0 1 2 5 10 20 40 80 120 160", EXTRA="--debug"
 set -eo pipefail

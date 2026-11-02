@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -l
 #SBATCH --job-name=mriqc
 #SBATCH --output=/home/gdehol/logs/res_mriqc_%A-%a.txt
 #SBATCH --ntasks=1

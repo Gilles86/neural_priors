@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -l
 #SBATCH --job-name=fmriprep_neuralpriors
 #SBATCH --output=/home/gdehol/logs/res_fmriprep_%A-%a.txt
 #SBATCH --ntasks=1

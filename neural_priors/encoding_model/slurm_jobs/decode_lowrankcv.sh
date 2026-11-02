@@ -20,7 +20,7 @@
 # CPU only (production decoding is CPU too); no GPU preflight needed.
 #
 #   sbatch --array=1-10,12-22,24-41%10 neural_priors/encoding_model/slurm_jobs/decode_lowrankcv.sh
-# Override with --export=ALL,FIT_RESPONSES=0,TAG=lowrankcv,INNER=fixed,LOWRANK_K=cv,EXTRA="--debug"
+# Override with FIT_RESPONSES=0 TAG=lowrankcv INNER=fixed LOWRANK_K=cv EXTRA="--debug" sbatch ...
 set -eo pipefail
 . $HOME/init_conda.sh
 source activate neural_priors2
