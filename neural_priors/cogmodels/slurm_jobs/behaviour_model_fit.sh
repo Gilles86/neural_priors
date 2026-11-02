@@ -13,8 +13,9 @@
 # bauer EstimationTaskModel). JOBS is a ';'-separated list of argument strings for the
 # fit script; the array index picks one (1-based).
 #
-#   sbatch --array=1-3 --export=NONE,CODE_DIR=$HOME/git/np_behaviour_model,BAUER_DIR=$HOME/git/bauer-estimation-np,JOBS="power_truncated --censor --low-rank-mass;log_truncated --censor;linear_truncated --censor" \
-#       neural_priors/cogmodels/slurm_jobs/behaviour_model_fit.sh
+#   CODE_DIR=$HOME/git/np_behaviour_model BAUER_DIR=$HOME/git/bauer-estimation-np \
+#   JOBS="power_truncated --censor --low-rank-mass;log_truncated --censor;linear_truncated --censor" \
+#       sbatch --array=1-3 neural_priors/cogmodels/slurm_jobs/behaviour_model_fit.sh
 
 set -eo pipefail
 CODE_DIR="${CODE_DIR:?set CODE_DIR to a clean clone of neural_priors}"
